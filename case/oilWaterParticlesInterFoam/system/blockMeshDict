@@ -1,0 +1,59 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+
+// Domain: 1 m x 1 m x 0.01 m (quasi-2D, one cell thick in z, frontAndBack empty).
+// Mesh: 50 x 50 x 1 cells -> 20 mm cells in x/y. Coarse on purpose — this case
+// is meant for qualitative oil-droplet/particle interaction, not resolved
+// interface curvature (contrast with the mm-scale, much finer MainSimulation case).
+scale 1;
+
+vertices
+(
+    (0 0 0)
+    (1 0 0)
+    (1 1 0)
+    (0 1 0)
+    (0 0 0.01)
+    (1 0 0.01)
+    (1 1 0.01)
+    (0 1 0.01)
+);
+
+blocks
+(
+    hex (0 1 2 3 4 5 6 7) (50 50 1) simpleGrading (1 1 1)
+);
+
+edges ();
+
+boundary
+(
+    walls
+    {
+        type wall;
+        faces
+        (
+            (0 4 7 3)
+            (1 2 6 5)
+            (0 1 5 4)
+            (3 7 6 2)
+        );
+    }
+
+    frontAndBack
+    {
+        type empty;
+        faces
+        (
+            (0 3 2 1)
+            (4 5 6 7)
+        );
+    }
+);
+
+mergePatchPairs ();

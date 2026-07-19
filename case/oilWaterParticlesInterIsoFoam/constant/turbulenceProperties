@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      turbulenceProperties;
+}
+
+// Laminar in this case despite the turbulence-model machinery being
+// constructed in createFields.H (see interisofoamSolver.C header note).
+simulationType laminar;

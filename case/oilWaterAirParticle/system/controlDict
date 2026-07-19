@@ -1,0 +1,55 @@
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object controlDict; }
+application     oilWaterAirParticleFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+
+// endTime chosen (pre-shrink) so the rising bubble/droplet reaches the top of
+// the domain and the flow settles; NOTE: after shrinking the bubble radius
+// to 0.35mm (see blockMeshDict/setFieldsDict comments), rise time and
+// terminal velocity both change, so this endTime has NOT been re-tuned for
+// the shrunk geometry and may need revisiting (stop early / run too long).
+endTime         0.33;
+
+// Initial guess only; adjustTimeStep below lets the solver grow/shrink deltaT
+// each step, bounded by maxCo and maxDeltaT.
+deltaT          1e-4;
+writeControl    adjustableRunTime;
+writeInterval   0.002;
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable yes;
+adjustTimeStep  yes;
+maxCo           0.5;         // Courant number cap used to grow/shrink deltaT
+maxDeltaT       4e-4;
+functions
+{
+    // Logs per-field min/max each 10 timesteps — useful sanity check for
+    // catching unbounded alpha (<0 or >1) or blow-up in U/p_rgh early.
+    fieldMinMax
+    {
+        type            fieldMinMax;
+        libs            (fieldFunctionObjects);
+        writeControl    timeStep;
+        writeInterval   10;
+        fields          (magU alpha.air alpha.oil alpha.water p_rgh);
+    }
+
+    // Writes the carrier-phase material derivative DU/Dt (DUcDt) to disk each
+    // timestep; consumed as ddtUc/DUcDt in the particle drag/added-mass force
+    // (see kinematicCloudProperties comments) since no turbulence model
+    // supplies this term in this laminar solver.
+    writeDUcDt
+    {
+        type            DDt;
+        libs            (fieldFunctionObjects);
+        field           U;
+        result          DUcDt;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+}

@@ -1,0 +1,101 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+
+solvers
+{
+    // NOTE: this alpha.water block is a MULES-solver dict inherited from the
+    // InterFoamSimulation template. isoAdvector (this case's actual alpha
+    // advection method, see alphaEqn.H) does not solve a matrix for alpha,
+    // so "solver"/"smoother"/"tolerance"/"cAlpha"/"MULESCorr"/"nLimiterIter"
+    // below are not used by it. Only nAlphaSubCycles is actually read
+    // (via alphaControls.H, see alphaEqnSubCycle.H). Left unchanged
+    // (comment-only pass) since it's harmless, just partly vestigial.
+    alpha.water
+    {
+        nAlphaCorr      1;
+        nAlphaSubCycles 2;
+        cAlpha          0.7;
+
+        MULESCorr       yes;
+        nLimiterIter    3;
+
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0;
+    }
+    alpha.waterFinal
+    {
+        nAlphaCorr      1;
+        nAlphaSubCycles 2;
+        cAlpha          1;
+
+        MULESCorr       yes;
+        nLimiterIter    3;
+
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0;
+    }
+
+    "pcorr.*"
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-8;
+        relTol          0;
+    }
+
+    p_rgh
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-7;
+        relTol          0.01;
+    }
+
+    p_rghFinal
+    {
+        $p_rgh;
+        relTol          0;
+    }
+
+    U
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-6;
+        relTol          0.1;
+    }
+
+    UFinal
+    {
+        $U;
+        relTol          0;
+    }
+}
+
+PIMPLE
+{
+    momentumPredictor yes;
+    nOuterCorrectors  1;
+    nCorrectors       2;
+    nNonOrthogonalCorrectors 0;
+
+    pRefCell          0;
+    pRefValue         0;
+}
+
+relaxationFactors
+{
+    equations
+    {
+        ".*" 1;
+    }
+}

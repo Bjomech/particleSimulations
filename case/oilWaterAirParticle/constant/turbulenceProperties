@@ -1,0 +1,12 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      turbulenceProperties;
+}
+// laminar: no turbulence model is constructed. The solver instead uses the
+// mixture's constant molecular viscosity (incompressibleThreePhaseMixture::mu())
+// directly in UEqn.H — there is no turbulent viscosity/RANS or LES model at all,
+// consistent with the small (mm-scale) bubble/droplet Reynolds numbers here.
+simulationType laminar;

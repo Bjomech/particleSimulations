@@ -1,0 +1,49 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSchemes;
+}
+
+ddtSchemes
+{
+    default         Euler;
+}
+
+gradSchemes
+{
+    default         Gauss linear;
+}
+
+divSchemes
+{
+    div(rhoPhi,U)              Gauss linearUpwind grad(U);
+    div(phi,alpha)             Gauss vanLeer;          // MULES-bounded alpha advection
+    div(phirb,alpha)           Gauss interfaceCompression; // artificial compression, sharpens interface
+    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
+}
+
+// alpha.water needs an explicit flux since it is solved for directly (MULES);
+// the complementary alpha.oil is derived algebraically (1 - alpha.water).
+fluxRequired
+{
+    default         no;
+    p_rgh;
+    alpha.water;
+}

@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       scalarField;
+    object      d;
+}
+1
+(
+3e-4
+)

@@ -1,0 +1,67 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      bubbleCloudProperties;
+}
+
+solution
+{
+    active          true;
+    coupled         true;
+    transient       yes;
+    cellValueSourceCorrection off;
+    interpolationSchemes { rho cell; U cellPoint; mu cell; }
+    integrationSchemes   { U Euler; }
+    sourceTerms          { schemes { U semiImplicit 1; } }
+}
+
+constantProperties
+{
+    rho0            1.2;
+    youngsModulus   1e6;
+    poissonsRatio   0.35;
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        gravity;
+    }
+
+    injectionModels
+    {
+        model1
+        {
+            type                patchInjection;
+            patchName           inlet;
+            U0                  (0 0.10 0);        // rising upward at 10 cm/s
+            massTotal           0;
+            parcelBasisType     fixed;
+            nParticle           1;
+            SOI                 0;
+            duration            2.0;
+            parcelsPerSecond    3;
+            flowRateProfile     constant 1;
+            sizeDistribution
+            {
+                type        fixedValue;
+                fixedValueDistribution { value 500e-6; }  // 500 µm bubbles
+            }
+        }
+    }
+
+    dispersionModel             none;
+    patchInteractionModel       standardWallInteraction;
+    surfaceFilmModel            none;
+    stochasticCollisionModel    none;
+    collisionModel              none;
+    packingModel                none;
+    dampingModel                none;
+    isotropyModel               none;
+
+    standardWallInteractionCoeffs { type rebound; e 1; mu 0; }
+}

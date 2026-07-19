@@ -1,0 +1,23 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       uniformDimensionedVectorField;
+    object      g;
+}
+// FLAG (comment only, value not changed): this solver uses the standard
+// OpenFOAM p = p_rgh + rho*gh buoyancy formulation (see createFields.H's
+// #include "gh.H"), the same as stock interFoam. In stock tutorials with y
+// as the vertical axis, g is normally (0 -9.81 0) — gravity pointing DOWN so
+// the light phase buoys UP. Here g is (0 +9.81 0), the reverse sign. Given
+// blockMeshDict's "top" patch is at max y and setFieldsDict places the air
+// bubble near y~0 (bottom) expecting it to rise toward the oil droplets at
+// higher y, this reversed sign is worth double-checking: with the standard
+// gh formulation it would tend to make the air phase sink rather than rise.
+// This mirrors the same sign already flagged in kinematicCloudProperties for
+// the particle cloud (gravity disabled there for exactly this reason) — but
+// that comment only covers the Lagrangian particle force, not the Eulerian
+// VOF buoyancy computed here, so re-verify bubble rise direction if this case
+// is re-run.
+dimensions      [0 1 -2 0 0 0 0];
+value           (0 9.81 0);

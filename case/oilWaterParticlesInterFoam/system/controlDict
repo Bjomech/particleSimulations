@@ -1,0 +1,39 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+// application name is inherited from the solver source directory
+// (interFoamSolver/turbulentThreePhaseFoam.C); despite the name this case is
+// two-phase water/oil, see that file's header comment for why.
+application     turbulentThreePhaseFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         10;      // large domain (1 m) + slow oil rise -> long physical time needed
+
+deltaT          1e-4;
+
+writeControl    timeStep;
+writeInterval   5;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  yes;
+maxCo           0.25;
+maxAlphaCo      0.25;   // MULES/interface-compression Courant limit (not used by isoAdvector cases)
+maxDeltaT       0.001;

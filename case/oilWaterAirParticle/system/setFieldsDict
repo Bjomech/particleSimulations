@@ -1,0 +1,63 @@
+FoamFile { version 2.0; format ascii; class dictionary; object setFieldsDict; }
+defaultFieldValues
+(
+    volScalarFieldValue alpha.air   0
+    volScalarFieldValue alpha.oil   0
+    volScalarFieldValue alpha.water 1
+);
+
+regions
+(
+    // Air bubble: R=0.35mm (shrunk by factor 0.07 from original R=5mm), centre scaled accordingly
+    // Rise velocity ~120mm/s → reaches droplet 1 at t≈0.13s
+    sphereToCell
+    {
+        centre  (0.00105 0.00105 0.000035);
+        radius  0.00035;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   1
+            volScalarFieldValue alpha.oil   0
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 1 — scaled by 0.07 (was centre (0.016 0.030 0.0005), radius 0.003)
+    sphereToCell
+    {
+        centre  (0.00112 0.0021 0.000035);
+        radius  0.00021;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   0
+            volScalarFieldValue alpha.oil   1
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 2 — scaled by 0.07 (was centre (0.014 0.065 0.0005), radius 0.0025)
+    sphereToCell
+    {
+        centre  (0.00098 0.00455 0.000035);
+        radius  0.000175;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   0
+            volScalarFieldValue alpha.oil   1
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 3 — scaled by 0.07 (was centre (0.015 0.085 0.0005), radius 0.002)
+    sphereToCell
+    {
+        centre  (0.00105 0.00595 0.000035);
+        radius  0.00014;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   0
+            volScalarFieldValue alpha.oil   1
+            volScalarFieldValue alpha.water 0
+        );
+    }
+);

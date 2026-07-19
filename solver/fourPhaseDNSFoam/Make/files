@@ -1,0 +1,6 @@
+fourPhaseDNSFoam.C
+/usr/lib/openfoam/openfoam2512/applications/solvers/multiphase/interFoam/interMixingFoam/immiscibleIncompressibleThreePhaseMixture/immiscibleIncompressibleThreePhaseMixture.C
+/usr/lib/openfoam/openfoam2512/applications/solvers/multiphase/interFoam/interMixingFoam/incompressibleThreePhaseMixture/incompressibleThreePhaseMixture.C
+/usr/lib/openfoam/openfoam2512/applications/solvers/multiphase/interFoam/interMixingFoam/threePhaseInterfaceProperties/threePhaseInterfaceProperties.C
+
+EXE = $(FOAM_USER_APPBIN)/fourPhaseDNSFoam

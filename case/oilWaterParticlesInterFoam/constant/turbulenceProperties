@@ -1,0 +1,13 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      turbulenceProperties;
+}
+
+// Solver name/headers say "turbulent..." and construct a turbulence model
+// object (incompressibleInterPhaseTransportModel), but this case runs it
+// in laminar mode via the entry below — change to RAS or LES to activate
+// actual turbulence modelling.
+simulationType laminar;

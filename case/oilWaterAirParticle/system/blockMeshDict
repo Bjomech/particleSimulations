@@ -1,0 +1,21 @@
+FoamFile { version 2.0; format ascii; class dictionary; object blockMeshDict; }
+scale 0.07; // domain shrunk uniformly by 0.07 so bubble/oil/particle stay proportionally sized
+vertices
+(
+    (0.000  0.000  0.000)
+    (0.030  0.000  0.000)
+    (0.030  0.100  0.000)
+    (0.000  0.100  0.000)
+    (0.000  0.000  0.001)
+    (0.030  0.000  0.001)
+    (0.030  0.100  0.001)
+    (0.000  0.100  0.001)
+);
+blocks ( hex (0 1 2 3 4 5 6 7) (150 500 1) simpleGrading (1 1 1) );
+edges ();
+boundary
+(
+    walls       { type wall;  faces ( (0 1 5 4) (0 3 7 4) (1 2 6 5) ); }
+    top         { type patch; faces ( (3 2 6 7) ); }
+    frontAndBack{ type empty; faces ( (0 1 2 3) (4 5 6 7) ); }
+);

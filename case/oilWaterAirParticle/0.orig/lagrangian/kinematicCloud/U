@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       vectorField;
+    object      U;
+}
+1
+(
+(0 0 0)
+)
