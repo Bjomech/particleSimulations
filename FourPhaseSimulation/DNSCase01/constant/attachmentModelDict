@@ -1,0 +1,12 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      attachmentModelDict;
+}
+
+collisionProbability    0.5;
+attachmentEfficiency    0.3;
+detachmentRate          0.1;
+captureRadius           6e-4;   // ~1.2x bubble radius

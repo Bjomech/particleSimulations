@@ -1,0 +1,63 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      setFieldsDict;
+}
+
+// Domain starts as pure water; the 4 spheres below are set to
+// alpha.water = 0, which (two-phase mixture, phases = water/oil) makes
+// them alpha.oil = 1 — i.e. 4 oil droplets of decreasing size, matching
+// the 4 particle-injection clusters in constant/kinematicCloudPositions.
+defaultFieldValues
+(
+    volScalarFieldValue alpha.water 1
+);
+
+regions
+(
+    // Oil droplet 1 (largest, R=0.12 m) — under particle cluster 1
+    sphereToCell
+    {
+        centre (0.25 0.30 0.005);
+        radius 0.12;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 2 (R=0.10 m) — under particle cluster 2
+    sphereToCell
+    {
+        centre (0.50 0.55 0.005);
+        radius 0.10;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 3 (R=0.08 m) — under particle cluster 3
+    sphereToCell
+    {
+        centre (0.75 0.35 0.005);
+        radius 0.08;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 4 (smallest, R=0.07 m) — under particle cluster 4
+    sphereToCell
+    {
+        centre (0.70 0.75 0.005);
+        radius 0.07;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 0
+        );
+    }
+);

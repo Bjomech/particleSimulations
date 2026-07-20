@@ -1,0 +1,113 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solvers
+{
+    // isoAdvector geometric VOF settings for all three alpha.* fields.
+    // nAlphaCorr/cAlpha are the same knobs a MULES-based solver would use,
+    // but isoAdvector's reconstructionScheme (isoAlpha = plane-based interface
+    // reconstruction) drives the actual advection; nAlphaSubCycles sub-cycles
+    // the alpha update within each outer PIMPLE step for stability at high Co.
+    "alpha.*"
+    {
+        nAlphaCorr          2;
+        nAlphaSubCycles     2;
+        cAlpha              1;
+        reconstructionScheme isoAlpha;
+    }
+
+    // Pressure-correction solve used to make the initial flux divergence-free
+    // before the momentum predictor (standard PIMPLE "correctPhi" step).
+    pcorr
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-4;
+        relTol          0;
+    }
+
+    pcorrFinal
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-4;
+        relTol          0;
+    }
+
+    // Main pressure (p_rgh) solve inside the outer PIMPLE loop; looser
+    // relTol (0.01) than the Final variant since it's re-solved next
+    // outer iteration anyway.
+    p_rgh
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-7;
+        relTol          0.01;
+    }
+
+    // Last outer-corrector solve of the timestep; relTol=0 means solve to
+    // full tolerance since this result is what gets written/used for the next step.
+    p_rghFinal
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-7;
+        relTol          0;
+    }
+
+    U
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-7;
+        relTol          0.1;
+    }
+
+    UFinal
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-7;
+        relTol          0;
+    }
+}
+
+PIMPLE
+{
+    nOuterCorrectors         2;   // outer (SIMPLE-like) iterations per timestep
+    nCorrectors              2;   // PISO pressure-velocity corrector loops per outer iteration
+    nNonOrthogonalCorrectors 0;   // mesh here is orthogonal (blockMesh box), so 0 is sufficient
+    momentumPredictor        yes;
+    pRefCell                 1000;   // reference cell for fixing p_rgh level (no fixed-p boundary)
+    pRefValue                0;
+}
+
+// Under-relaxation stabilizes the outer-corrector loop; p_rgh and U are
+// relaxed, everything else (alpha, etc., matched by ".*") is left unrelaxed (1).
+relaxationFactors
+{
+    fields
+    {
+        p_rgh           0.3;
+    }
+    equations
+    {
+        U               0.7;
+        ".*"            1;
+    }
+}
+
+// ************************************************************************* //

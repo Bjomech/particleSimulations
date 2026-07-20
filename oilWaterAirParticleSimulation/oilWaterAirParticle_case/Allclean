@@ -1,0 +1,12 @@
+#!/bin/sh
+cd ${0%/*} || exit 1    # Run from this directory
+
+# Source tutorial clean functions (provides cleanCase, etc.)
+. $WM_PROJECT_DIR/bin/tools/CleanFunctions
+
+# Remove all time directories/logs/postProcessing (standard OpenFOAM
+# cleanCase), plus 0/alpha.map which cleanCase does not remove on its own
+# (an isoAdvector-specific intermediate/debug field left over from a run).
+cleanCase && rm -f 0/alpha.map
+
+#------------------------------------------------------------------------------

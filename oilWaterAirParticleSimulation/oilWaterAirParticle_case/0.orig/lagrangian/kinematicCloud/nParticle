@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       scalarField;
+    object      nParticle;
+}
+1
+(
+1
+)

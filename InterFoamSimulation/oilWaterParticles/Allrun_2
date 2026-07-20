@@ -1,0 +1,26 @@
+#!/bin/bash
+cd "${0%/*}" || exit 1
+
+caseName="${PWD##*/}"
+solver="turbulentThreePhaseFoam"   # actually two-phase water/oil, see solver .C header comment
+
+echo "Running blockMesh..."
+blockMesh > log.blockMesh 2>&1 || {
+    echo "blockMesh failed. See log.blockMesh"
+    exit 1
+}
+
+echo "Running $solver..."
+$solver > "log.$solver" 2>&1 || {
+    echo "$solver failed. See log.$solver"
+    exit 1
+}
+
+echo "Creating ParaView file..."
+touch "${caseName}.foam"
+
+echo "Done."
+echo "Created:"
+echo "  log.blockMesh"
+echo "  log.$solver"
+echo "  ${caseName}.foam"

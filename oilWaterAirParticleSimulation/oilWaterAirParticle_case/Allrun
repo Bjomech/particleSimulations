@@ -1,0 +1,13 @@
+#!/bin/bash
+cd "${0%/*}" || exit 1   # Run from this script's own directory regardless of caller's cwd
+
+
+# Generate the mesh, then initialize the alpha fields' bubble/droplet/particle
+# regions (see setFieldsDict) before launching the solver. blockMesh/setFields
+# must succeed (&&) before the next step runs; the solver itself is launched
+# in the background so this script returns immediately.
+blockMesh   > log.blockMesh   2>&1 && echo "blockMesh done"
+setFields   > log.setFields   2>&1 && echo "setFields done"
+oilWaterAirParticleFoam > log.solver 2>&1 &
+echo "Solver running in background (PID $!)"
+echo "Watch progress:  tail -f log.solver"

@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      dynamicMeshDict;
+}
+
+// Fixed mesh (no motion/AMR) — required boilerplate file for solvers built
+// on dynamicFvMesh even when the mesh never actually moves in this case.
+dynamicFvMesh staticFvMesh;

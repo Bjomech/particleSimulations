@@ -1,0 +1,67 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      particleCloudProperties;
+}
+
+solution
+{
+    active          true;
+    coupled         true;
+    transient       yes;
+    cellValueSourceCorrection off;
+    interpolationSchemes { rho cell; U cellPoint; mu cell; }
+    integrationSchemes   { U Euler; }
+    sourceTerms          { schemes { U semiImplicit 1; } }
+}
+
+constantProperties
+{
+    rho0            2500;
+    youngsModulus   1e9;
+    poissonsRatio   0.35;
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        gravity;
+    }
+
+    injectionModels
+    {
+        model1
+        {
+            type                patchInjection;
+            patch           top;
+            U0                  (0 -0.05 0);      // falling downward 5 cm/s
+            massTotal           0;
+            parcelBasisType     fixed;
+            nParticle           1;
+            SOI                 0;
+            duration            2.0;
+            parcelsPerSecond    10;
+            flowRateProfile     constant 1;
+            sizeDistribution
+            {
+                type        fixedValue;
+                fixedValueDistribution { value 100e-6; }
+            }
+        }
+    }
+
+    dispersionModel             none;
+    patchInteractionModel       standardWallInteraction;
+    surfaceFilmModel            none;
+    stochasticCollisionModel    none;
+    collisionModel              none;
+    packingModel                none;
+    dampingModel                none;
+    isotropyModel               none;
+
+    standardWallInteractionCoeffs { type rebound; e 0.8; mu 0.1; }
+}

@@ -1,0 +1,43 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+// NOTE: this "application" entry is stale/incorrect and left over from
+// copying the InterFoamSimulation case as a template — the solver actually
+// run for this case is "interisofoamSolver" (hardcoded in Allrun_1, see
+// interisofoamSolver.C). controlDict's application field is informational
+// only (used by some post-processing tools) and doesn't affect which solver
+// runs, but it should really say interisofoamSolver here. Left unchanged
+// (comment-only pass) — update if you rely on this field anywhere.
+application     turbulentThreePhaseFoam;
+
+startFrom       startTime;
+startTime       0;
+
+stopAt          endTime;
+endTime         10;
+
+deltaT          1e-4;
+
+writeControl    timeStep;
+writeInterval   5;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  yes;
+maxCo           0.25;
+maxAlphaCo      0.25;   // isoAdvector still respects this Courant-based sub-cycling limit
+maxDeltaT       0.001;

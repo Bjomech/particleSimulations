@@ -1,0 +1,13 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       uniformDimensionedVectorField;
+    object      g;
+}
+
+// Standard gravity convention: +y is up, gravity points down (-y).
+// (Contrast with MainSimulation's case, which uses +y for gravity — see
+// that case's constant/g and kinematicCloudProperties comments.)
+dimensions      [0 1 -2 0 0 0 0];
+value           (0 -9.81 0);

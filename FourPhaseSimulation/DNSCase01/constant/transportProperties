@@ -1,0 +1,41 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      transportProperties;
+}
+
+// We < 1: sigma >> rho*U^2*L  → oil droplets stay spherical
+// Reference: U=0.1 m/s, L=0.005m (droplet), rho_water=1000
+
+phases (water oil air);
+
+water
+{
+    transportModel  Newtonian;
+    nu              [0 2 -1 0 0 0 0] 1e-6;
+    rho             [1 -3 0 0 0 0 0] 1000;
+}
+
+oil
+{
+    transportModel  Newtonian;
+    nu              [0 2 -1 0 0 0 0] 5e-5;
+    rho             [1 -3 0 0 0 0 0] 850;
+}
+
+air
+{
+    transportModel  Newtonian;
+    nu              [0 2 -1 0 0 0 0] 1.48e-5;
+    rho             [1 -3 0 0 0 0 0] 1.2;
+}
+
+// Surface tensions — We = rho*U^2*L/sigma
+// We < 1 requires sigma > rho*U^2*L = 1000*0.01*0.005 = 0.05 N/m  ✓
+sigma12         [1 0 -2 0 0 0 0] 0.07;   // water-oil
+sigma13         [1 0 -2 0 0 0 0] 0.072;  // water-air
+sigma23         [1 0 -2 0 0 0 0] 0.035;  // oil-air
+
+D23             [0 2 -1 0 0 0 0] 1e-9;

@@ -1,0 +1,105 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+
+solution
+{
+    active          true;
+    coupled         false;
+    transient       yes;
+    cellValueSourceCorrection off;
+
+    interpolationSchemes
+    {
+        rho         cell;
+        U           cellPoint;
+        muc         cell;
+    }
+
+    integrationSchemes
+    {
+        U           Euler;
+    }
+
+    sourceTerms
+    {
+        schemes
+        {
+            U       semiImplicit 1;
+        }
+    }
+}
+
+// Identical particle setup to InterFoamSimulation's case.
+constantProperties
+{
+    rho0            2500;    // [kg/m^3] mineral particle density
+    youngsModulus   1e8;
+    poissonsRatio   0.35;
+}
+
+subModels
+{
+    // gravity active: constant/g here is standard (0 -9.81 0), unlike MainSimulation.
+    particleForces
+    {
+        sphereDrag;
+        gravity;
+    }
+
+
+    injectionModels
+    {
+        model1
+        {
+            type            manualInjection;
+            massTotal       1e-9;
+            parcelBasisType fixed;
+            nParticle       1;
+            SOI             0;
+            positionsFile   "kinematicCloudPositions";
+            U0              (0.2 0.0 0);
+            sizeDistribution
+            {
+                type        fixedValue;
+                fixedValueDistribution
+                {
+                    value   1e-4;
+                }
+            }
+        }
+    }
+
+
+    dispersionModel none;
+
+    patchInteractionModel standardWallInteraction;
+
+    standardWallInteractionCoeffs
+    {
+        type rebound;
+    }
+
+    heatTransferModel none;
+
+    surfaceFilmModel none;
+
+    collisionModel none;
+
+    stochasticCollisionModel none;
+
+    radiation off;
+}
+
+cloudFunctions
+{
+    WeberNumber1
+    {
+        type    WeberNumber;
+        sigma   0.03;    // surface tension [N/m] — adjust to your fluid pair
+    }
+}

@@ -1,0 +1,14 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       uniformDimensionedVectorField;
+    object      g;
+}
+dimensions  [0 1 -2 0 0 0 0];
+value       (0 -9.81 0);
+// NOTE: was (0 0 0) — zero gravity disables the basicKinematicCloud
+// "gravity" particle force submodel entirely for both particleCloud and
+// bubbleCloud, so nothing settles or rises. Set to standard downward
+// gravity (matches DNSCase01's constant/g) so particles fall and bubbles
+// rise via buoyancy.

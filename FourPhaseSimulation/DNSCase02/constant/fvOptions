@@ -1,0 +1,30 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvOptions;
+}
+
+airSource
+{
+    type            scalarSemiImplicitSource;
+    active          true;
+
+    scalarSemiImplicitSourceCoeffs
+    {
+        selectionMode   points;
+        points
+        (
+            (0.010 0.005 0.025)
+            (0.025 0.005 0.025)
+            (0.040 0.005 0.025)
+        );
+
+        volumeMode      absolute;
+        injectionRateSuSp
+        {
+            alpha.air   (1e-6 0);   // inject alpha.air at source rate
+        }
+    }
+}

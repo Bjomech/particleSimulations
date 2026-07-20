@@ -1,0 +1,28 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      transportProperties;
+}
+
+// Two phases only — no air/third phase in this case (see solver .C header).
+phases (water oil);
+
+water
+{
+    transportModel  Newtonian;
+    nu              [0 2 -1 0 0 0 0] 1e-6;   // = 1 cSt, standard water at ~20C
+    rho             [1 -3 0 0 0 0 0] 1000;
+}
+
+oil
+{
+    transportModel  Newtonian;
+    nu              [0 2 -1 0 0 0 0] 5e-5;   // = 50 cSt -> mu = 0.0425 Pa.s, ~50x water's dynamic viscosity
+    rho             [1 -3 0 0 0 0 0] 850;
+}
+
+// Oil-water surface tension coefficient [N/m], also referenced by the
+// WeberNumber cloud function in constant/kinematicCloudProperties — keep both in sync.
+sigma           [1 0 -2 0 0 0 0] 0.03;

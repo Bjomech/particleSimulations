@@ -1,0 +1,10 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      dynamicMeshDict;
+}
+
+// Fixed mesh — boilerplate required by dynamicFvMesh-based solvers even though it never moves here.
+dynamicFvMesh staticFvMesh;
