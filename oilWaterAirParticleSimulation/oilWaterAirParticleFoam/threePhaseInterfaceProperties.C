@@ -71,11 +71,32 @@ void threePhaseInterfaceProperties::correct()
     // The small delta prevents division by zero in single-phase cells where
     // grad(alpha) = 0.
 
+    // FIXED: deltaN was hardcoded to a bare 1e-8 (units 1/m), completely
+    // unscaled by mesh resolution. Stock OpenFOAM (interfaceProperties.C)
+    // instead scales it as 1e-8/(mean cell size), i.e.
+    // 1e-8/pow(average(mesh.V()), 1/3). For this mesh's ~14um cells that
+    // gives deltaN ~= 7e-4 (1/m) -- about 70,000x LARGER than the bare 1e-8
+    // that was here. With deltaN far too small, magGradAlpha barely above
+    // machine noise near the tail of the (sharp, isoAdvector) interface was
+    // still enough to dominate the denominator, so near-noise gradients got
+    // normalised into full-length, effectively random unit normals -- these
+    // feed straight into curvature (K = -div(nHat)) and then into
+    // surfaceTensionForce(), injecting large, chaotic, sign-flipping forces
+    // into the momentum equation ('spurious currents', a well-known VOF/CSF
+    // artifact, worsened here by the small bubble radius + realistic
+    // air-water sigma13=0.07 N/m -> small Eo -> surface tension already
+    // dominates buoyancy, so this noise was easily strong enough to mask or
+    // reverse the real (weak) buoyant rise).
+    const scalar meshSize
+    (
+        Foam::pow(Foam::average(mixture_.alpha1().mesh().V()).value(), 1.0/3.0)
+    );
+
     const dimensionedScalar deltaN
     (
         "deltaN",
         dimless/dimLength,
-        1e-8
+        1e-8/meshSize
     );
 
     auto computeK = [&](const volScalarField& alpha) -> volScalarField

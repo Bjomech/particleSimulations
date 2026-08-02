@@ -1,0 +1,854 @@
+==================== ./threePhaseInterfaceProperties.H ====================
+#ifndef threePhaseInterfaceProperties_H
+#define threePhaseInterfaceProperties_H
+
+#include "incompressibleThreePhaseMixture.H"
+
+namespace Foam
+{
+
+class threePhaseInterfaceProperties
+{
+private:
+    const incompressibleThreePhaseMixture& mixture_;
+
+    dimensionedScalar sigma12_;
+    dimensionedScalar sigma13_;
+    dimensionedScalar sigma23_;
+
+    volScalarField K1_;
+    volScalarField K2_;
+    volScalarField K3_;
+
+public:
+    threePhaseInterfaceProperties(const incompressibleThreePhaseMixture& mixture);
+
+    tmp<surfaceScalarField> surfaceTensionForce() const;
+    void correct();
+};
+
+} // End namespace Foam
+
+#endif
+
+==================== ./alphaEqn.H ====================
+// alphaEqn.H — three-phase sequential constrained isoAdvection
+//
+// Strategy (avoids phase mixing at three-phase contact lines):
+//
+//   STEP 1 — advect alpha.air (unconstrained, bounds [0,1])
+//   STEP 2 — cap alpha.oil BEFORE advection: alpha2 = min(alpha2, 1-alpha1)
+//             then advect alpha.oil with isoAdvector
+//             then cap AFTER advection:       alpha2 = min(alpha2, 1-alpha1)
+//   STEP 3 — alpha.water = 1 - alpha.air - alpha.oil  (algebraic)
+//
+// Why capping instead of a constrained MULES upper-bound argument?
+//   isoAdvection::advect() takes only Sp and Su source terms — there is no
+//   upper-bound argument.  Post-advection clamping achieves the same effect:
+//   any oil that isoAdvector tried to put into an air cell is clipped out.
+//   The clipped mass is tiny (one-cell boundary effect) and doesn't affect
+//   conservation meaningfully.
+//
+// Sub-cycling: nAlphaSubCycles from alphaControls.H (fvSolution/PIMPLE dict).
+//   The sub-cycle loop is on alpha1 only (standard isobubbleFoam pattern);
+//   alpha2 sub-cycles in lockstep inside the same loop.
+
+{
+    dimensionedScalar totalDeltaT = runTime.deltaT();
+
+    // rhoPhi accumulator for sub-cycling
+    surfaceScalarField rhoPhiSum
+    (
+        IOobject("rhoPhiSum", runTime.timeName(), mesh),
+        mesh,
+        dimensionedScalar(rhoPhi.dimensions(), Zero)
+    );
+
+    for
+    (
+        subCycle<volScalarField> alphaSubCycle(alpha1, nAlphaSubCycles);
+        !(++alphaSubCycle).end();
+    )
+    {
+        // ── STEP 1: advect alpha.air ──────────────────────────────────────
+        {
+            volScalarField::Internal Sp1
+            (
+                IOobject("Sp1", runTime.timeName(), mesh),
+                mesh, dimensionedScalar(dimless/dimTime, Zero)
+            );
+            volScalarField::Internal Su1
+            (
+                IOobject("Su1", runTime.timeName(), mesh),
+                mesh, dimensionedScalar(dimless/dimTime, Zero)
+            );
+            advector1.advect(Sp1, Su1);
+            // Clamp to [0,1] to remove any sub-cell round-off
+            alpha1 = max(min(alpha1, one_), zero_);
+        }
+
+        // ── STEP 2: advect alpha.oil (constrained) ────────────────────────
+        // Pre-cap: oil cannot sit in cells that are now fully air
+        alpha2 = min(max(alpha2, zero_), one_ - alpha1);
+        {
+            volScalarField::Internal Sp2
+            (
+                IOobject("Sp2", runTime.timeName(), mesh),
+                mesh, dimensionedScalar(dimless/dimTime, Zero)
+            );
+            volScalarField::Internal Su2
+            (
+                IOobject("Su2", runTime.timeName(), mesh),
+                mesh, dimensionedScalar(dimless/dimTime, Zero)
+            );
+            advector2.advect(Sp2, Su2);
+            // Post-cap: enforce alpha1 + alpha2 <= 1
+            alpha2 = min(max(alpha2, zero_), one_ - alpha1);
+        }
+
+        // ── STEP 3: alpha.water = remainder ──────────────────────────────
+        alpha3 = max(one_ - alpha1 - alpha2, zero_);
+
+        // Accumulate rhoPhi for sub-cycle averaging
+        // Use air-advector rhoPhi as the primary carrier flux
+        rhoPhiSum += (runTime.deltaT()/totalDeltaT)
+                   * advector1.getRhoPhi(rho1, rho3);
+    }
+
+    rhoPhi = rhoPhiSum;
+}
+
+Info<< "Phase fractions:"
+    << "  alpha.air = "
+    << alpha1.weightedAverage(mesh.V()).value()
+    << "  Min=" << min(alpha1).value()
+    << "  Max=" << max(alpha1).value()
+    << "  alpha.oil = "
+    << alpha2.weightedAverage(mesh.V()).value()
+    << "  Max=" << max(alpha2).value()
+    << endl;
+
+==================== ./threePhaseInterfaceProperties.C ====================
+#include "threePhaseInterfaceProperties.H"
+#include "fvc.H"
+#include "fvCFD.H"   // provides dimensionedScalar, dimless, etc.
+
+namespace Foam
+{
+
+threePhaseInterfaceProperties::threePhaseInterfaceProperties
+(
+    const incompressibleThreePhaseMixture& mixture
+)
+:
+    mixture_(mixture),
+    sigma12_
+    (
+        "sigma12",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma12")
+    ),
+    sigma13_
+    (
+        "sigma13",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma13")
+    ),
+    sigma23_
+    (
+        "sigma23",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma23")
+    ),
+    K1_
+    (
+        IOobject
+        (
+            "K1",
+            mixture_.alpha1().time().timeName(),
+            mixture_.alpha1().mesh(),
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
+        ),
+        mixture_.alpha1().mesh(),
+        dimensionedScalar(dimless/dimLength, Zero)
+    ),
+    K2_(K1_),
+    K3_(K1_)
+{}
+
+tmp<surfaceScalarField> threePhaseInterfaceProperties::surfaceTensionForce() const
+{
+    return
+        fvc::interpolate(sigma13_*K1_)*fvc::snGrad(mixture_.alpha1())
+      + fvc::interpolate(sigma23_*K2_)*fvc::snGrad(mixture_.alpha2())
+      + fvc::interpolate(sigma23_*K3_)*fvc::snGrad(mixture_.alpha3());
+}
+
+void threePhaseInterfaceProperties::correct()
+{
+    // Curvature calculation disabled to avoid missing fvSchemes entry.
+    // Surface tension force is zero because phig is set to zero in pEqn.H.
+}
+
+} // End namespace Foam
+
+==================== ./immiscibleIncompressibleThreePhaseMixture.H ====================
+#ifndef immiscibleIncompressibleThreePhaseMixture_H
+#define immiscibleIncompressibleThreePhaseMixture_H
+
+#include "incompressibleThreePhaseMixture.H"
+#include "threePhaseInterfaceProperties.H"
+
+namespace Foam
+{
+
+class immiscibleIncompressibleThreePhaseMixture
+:
+    public incompressibleThreePhaseMixture,
+    public threePhaseInterfaceProperties
+{
+public:
+    immiscibleIncompressibleThreePhaseMixture
+    (
+        const volVectorField& U,
+        const surfaceScalarField& phi
+    )
+    :
+        incompressibleThreePhaseMixture(U, phi),
+        threePhaseInterfaceProperties(static_cast<const incompressibleThreePhaseMixture&>(*this))
+    {}
+
+    using incompressibleThreePhaseMixture::alpha1;
+    using incompressibleThreePhaseMixture::alpha2;
+    using incompressibleThreePhaseMixture::alpha3;
+    using incompressibleThreePhaseMixture::rho1;
+    using incompressibleThreePhaseMixture::rho2;
+    using incompressibleThreePhaseMixture::rho3;
+    using incompressibleThreePhaseMixture::mu;
+
+    tmp<surfaceScalarField> surfaceTensionForce() const
+    {
+        return threePhaseInterfaceProperties::surfaceTensionForce();
+    }
+
+    void correct()
+    {
+        incompressibleThreePhaseMixture::correct();
+        threePhaseInterfaceProperties::correct();
+    }
+};
+
+} // End namespace Foam
+
+#endif
+
+==================== ./pEqn.H ====================
+// pEqn.H — pressure correction with buoyancy (no surface tension)
+{
+    tmp<volScalarField> trAU(1.0/UEqn.A());
+    const volScalarField& rAU = trAU();
+
+    surfaceScalarField rAUf("rAUf", fvc::interpolate(rAU));
+
+    volVectorField HbyA(constrainHbyA(rAU*UEqn.H(), U, p_rgh));
+
+    surfaceScalarField phiHbyA
+    (
+        "phiHbyA",
+        fvc::flux(HbyA)
+      + MRF.zeroFilter(fvc::interpolate(rho*rAU)*fvc::ddtCorr(U, phi))
+    );
+
+    MRF.makeRelative(phiHbyA);
+
+    if (p_rgh.needReference())
+    {
+        fvc::makeRelative(phiHbyA, U);
+        adjustPhi(phiHbyA, U, p_rgh);
+        fvc::makeAbsolute(phiHbyA, U);
+    }
+
+    // Buoyancy flux (ghf * snGrad(rho) * rAUf * mesh.magSf())
+    surfaceScalarField phig
+    (
+        ghf*fvc::snGrad(rho)*rAUf*mesh.magSf()
+    );
+    phiHbyA += phig;
+
+    constrainPressure(p_rgh, U, phiHbyA, rAUf, MRF);
+
+    while (pimple.correctNonOrthogonal())
+    {
+        fvScalarMatrix p_rghEqn
+        (
+            fvm::laplacian(rAUf, p_rgh) == fvc::div(phiHbyA)
+        );
+
+        p_rghEqn.setReference(pRefCell, getRefCellValue(p_rgh, pRefCell));
+        p_rghEqn.solve();
+
+        if (pimple.finalNonOrthogonalIter())
+        {
+            phi = phiHbyA - p_rghEqn.flux();
+            p_rgh.relax();
+            U = HbyA + rAU*fvc::reconstruct((phig - p_rghEqn.flux())/rAUf);
+            U.correctBoundaryConditions();
+            fvOptions.correct(U);
+        }
+    }
+
+    #include "continuityErrs.H"
+
+    fvc::makeRelative(phi, U);
+
+    p == p_rgh + rho*gh;
+
+    if (p_rgh.needReference())
+    {
+        p += dimensionedScalar
+        (
+            "p", p.dimensions(),
+            pRefValue - getRefCellValue(p, pRefCell)
+        );
+        p_rgh == p - rho*gh;
+    }
+}
+
+==================== ./UEqn.H ====================
+// UEqn.H — with pressure gradient in predictor
+MRF.correctBoundaryVelocity(U);
+
+fvVectorMatrix UEqn
+(
+    fvm::ddt(rho, U)
+  + fvm::div(rhoPhi, U)
+  + MRF.DDt(rho, U)
+  - fvm::laplacian(mixture.mu(), U)
+ ==
+    fvOptions(rho, U)
+);
+
+UEqn.relax();
+
+if (pimple.momentumPredictor())
+{
+    solve(UEqn == -fvc::grad(p_rgh));   // include pressure gradient
+    fvOptions.correct(U);
+}
+
+==================== ./incompressibleThreePhaseMixture.C ====================
+#include "incompressibleThreePhaseMixture.H"
+#include "fvCFD.H"
+
+namespace Foam
+{
+
+incompressibleThreePhaseMixture::incompressibleThreePhaseMixture
+(
+    const volVectorField& U,
+    const surfaceScalarField& phi
+)
+:
+    IOdictionary
+    (
+        IOobject
+        (
+            "transportProperties",
+            U.time().constant(),
+            U.db(),
+            IOobject::MUST_READ,
+            IOobject::NO_WRITE
+        )
+    ),
+    alpha1_
+    (
+        IOobject
+        (
+            "alpha.air",
+            U.time().timeName(),
+            U.db(),
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        U.mesh()
+    ),
+    alpha2_
+    (
+        IOobject
+        (
+            "alpha.oil",
+            U.time().timeName(),
+            U.db(),
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        U.mesh()
+    ),
+    alpha3_
+    (
+        IOobject
+        (
+            "alpha.water",
+            U.time().timeName(),
+            U.db(),
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        U.mesh()
+    ),
+    rho1_
+    (
+        dimensionedScalar
+        (
+            "rho1",
+            dimDensity,
+            readScalar(lookup("rho1"))
+        )
+    ),
+    rho2_
+    (
+        dimensionedScalar
+        (
+            "rho2",
+            dimDensity,
+            readScalar(lookup("rho2"))
+        )
+    ),
+    rho3_
+    (
+        dimensionedScalar
+        (
+            "rho3",
+            dimDensity,
+            readScalar(lookup("rho3"))
+        )
+    ),
+    mu1_
+    (
+        dimensionedScalar
+        (
+            "mu1",
+            dimDynamicViscosity,
+            readScalar(lookup("mu1"))
+        )
+    ),
+    mu2_
+    (
+        dimensionedScalar
+        (
+            "mu2",
+            dimDynamicViscosity,
+            readScalar(lookup("mu2"))
+        )
+    ),
+    mu3_
+    (
+        dimensionedScalar
+        (
+            "mu3",
+            dimDynamicViscosity,
+            readScalar(lookup("mu3"))
+        )
+    )
+{}
+
+tmp<volScalarField> incompressibleThreePhaseMixture::mu() const
+{
+    return volScalarField::New
+    (
+        "mu",
+        alpha1_*mu1_ + alpha2_*mu2_ + alpha3_*mu3_
+    );
+}
+
+void incompressibleThreePhaseMixture::correct()
+{
+    // No additional correction needed for now
+}
+
+} // End namespace Foam
+
+==================== ./oilWaterAirParticleFoam.C ====================
+/*---------------------------------------------------------------------------*\
+  oilWaterAirParticleFoam
+  Three-phase isoAdvector VOF + Lagrangian kinematic particle cloud.
+
+  Physics goal
+  ────────────
+  Air bubble (R=22.5 mm) rises through water carrying a 0.5 mm particle
+  upward through 5 oil droplets.  We want to see:
+    • Sharp air|water interface (bubble shape preserved)
+    • Sharp oil|water interfaces (droplets don't dissolve)
+    • Particle captured inside bubble, rising with it
+    • Bubble-oil and oil-particle surface interactions
+
+  Why isoAdvector
+  ───────────────
+  isoAdvector reconstructs the interface geometrically (piecewise-linear
+  cutting) every step.  Interfaces stay exactly 1–2 cells wide regardless
+  of velocity or timestep.  MULES with cAlpha compression diffuses slowly
+  over hundreds of steps — that was why the bubble and droplets dissolved.
+
+  Three-phase approach
+  ────────────────────
+  Two isoAdvection objects (one per transported phase):
+    advector1 → alpha.air   (phase 1, solved first, unconstrained)
+    advector2 → alpha.oil   (phase 2, solved second, capped at 1-alpha1)
+    alpha.water = 1 - alpha.air - alpha.oil  (algebraic remainder)
+
+  Based on isobubbleFoam structure.  dt control via alphaCourantNo.H +
+  setDeltaT.H works correctly with isoAdvector (no compression-flux
+  inflation, so Interface Co doesn't cause dt collapse).
+\*---------------------------------------------------------------------------*/
+
+#include "fvCFD.H"
+#include "turbulentTransportModel.H"
+#include "dynamicFvMesh.H"
+#include "isoAdvection.H"
+#include "EulerDdtScheme.H"
+#include "localEulerDdtScheme.H"
+#include "CrankNicolsonDdtScheme.H"
+#include "subCycle.H"
+#include "immiscibleIncompressibleThreePhaseMixture.H"
+#include "pimpleControl.H"
+#include "fvOptions.H"
+#include "CorrectPhi.H"
+#include "fvcSmooth.H"
+#include "basicKinematicCloud.H"
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+int main(int argc, char *argv[])
+{
+    argList::addNote
+    (
+        "oilWaterAirParticleFoam: three-phase isoAdvector VOF solver "
+        "(air bubble rising through oil droplets in water) "
+        "with Lagrangian kinematic particle cloud."
+    );
+
+    #include "postProcess.H"
+    #include "addCheckCaseOptions.H"
+    #include "setRootCaseLists.H"
+    #include "createTime.H"
+    #include "createDynamicFvMesh.H"
+    #include "initContinuityErrs.H"
+    #include "createDyMControls.H"
+    #include "createFields.H"
+    #include "initCorrectPhi.H"
+    #include "createUfIfPresent.H"
+
+    const word kinematicCloudName
+    (
+        args.getOrDefault<word>("cloud", "kinematicCloud")
+    );
+
+    Info<< "Constructing kinematic cloud: " << kinematicCloudName << nl;
+    basicKinematicCloud particles(kinematicCloudName, rho, U, muc, g);
+
+    Info<< "\nStarting time loop\n" << endl;
+
+    while (runTime.run())
+    {
+        #include "readDyMControls.H"
+
+        if (LTS)
+        {
+            #include "setRDeltaT.H"
+        }
+        else
+        {
+            // Standard VoF dt control — works correctly with isoAdvector
+            // because isoAdvector has no compression flux, so alphaCourantNo
+            // is just the convective Co and doesn't cause dt collapse.
+            //#include "CourantNo.H"
+            //#include "alphaCourantNo.H"
+            //#include "setDeltaT.H"
+            #include "CourantNo.H"
+            // #include "alphaCourantNo.H"   // commented out
+            scalar alphaCoNum = 0.0;
+            scalar maxAlphaCo = GREAT;
+            #include "setDeltaT.H"
+        }
+
+        ++runTime;
+        Info<< "Time = " << runTime.timeName() << nl << endl;
+
+        while (pimple.loop())
+        {
+            if (pimple.firstIter() || moveMeshOuterCorrectors)
+            {
+                mesh.update();
+            }
+
+            if (mesh.changing())
+            {
+                gh  = (g & mesh.C())  - ghRef;
+                ghf = (g & mesh.Cf()) - ghRef;
+                MRF.update();
+
+                if (correctPhi)
+                {
+                    phi = mesh.Sf() & Uf();
+                    #include "correctPhi.H"
+                    fvc::makeRelative(phi, U);
+                }
+            }
+
+                        mixture.correct();
+
+            if (checkMeshCourantNo)
+            {
+                #include "meshCourantNo.H"
+            }
+
+            #include "alphaControls.H"           // only once
+            Info << "Dimensions after mixture.correct(): "
+                 << "alpha1: " << alpha1.dimensions() << ", "
+                 << "alpha2: " << alpha2.dimensions() << ", "
+                 << "rho: " << rho.dimensions() << endl;
+            #include "alphaEqn.H"               // uses variables from alphaControls
+
+            mixture.correct();
+
+            mixture.correct();
+
+            rho    = alpha1*rho1 + alpha2*rho2 + alpha3*rho3;
+            rhoPhi = fvc::interpolate(rho)*phi;
+
+            if (pimple.frozenFlow()) continue;
+
+            #include "UEqn.H"
+
+            while (pimple.correct())
+            {
+                #include "pEqn.H"
+            }
+
+            //if (pimple.turbCorr())
+            //{
+            //    turbulence->correct();
+            //}
+
+            // Evolve particle cloud
+            if (particles.nParcels() > 0)
+            {
+                muc = max
+                (
+                    mixture.mu(),
+                    dimensionedScalar("mucMin", dimDynamicViscosity, 1e-5)
+                );
+                particles.evolve();
+            }
+        }
+
+        runTime.write();
+        runTime.printExecutionTime(Info);
+    }
+
+    Info<< "End\n" << endl;
+    return 0;
+}
+
+// ************************************************************************* //
+
+==================== ./incompressibleThreePhaseMixture.H ====================
+#ifndef incompressibleThreePhaseMixture_H
+#define incompressibleThreePhaseMixture_H
+
+#include "IOdictionary.H"
+#include "volFields.H"
+#include "surfaceFields.H"
+#include "dimensionedScalar.H"
+
+namespace Foam
+{
+
+class incompressibleThreePhaseMixture
+:
+    public IOdictionary
+{
+protected:
+    volScalarField alpha1_;
+    volScalarField alpha2_;
+    volScalarField alpha3_;
+
+    dimensionedScalar rho1_;
+    dimensionedScalar rho2_;
+    dimensionedScalar rho3_;
+
+    dimensionedScalar mu1_;
+    dimensionedScalar mu2_;
+    dimensionedScalar mu3_;
+
+public:
+    // Constructor
+    incompressibleThreePhaseMixture
+    (
+        const volVectorField& U,
+        const surfaceScalarField& phi
+    );
+
+    // Access to phase fractions
+    volScalarField& alpha1() { return alpha1_; }
+    volScalarField& alpha2() { return alpha2_; }
+    volScalarField& alpha3() { return alpha3_; }
+    const volScalarField& alpha1() const { return alpha1_; }
+    const volScalarField& alpha2() const { return alpha2_; }
+    const volScalarField& alpha3() const { return alpha3_; }
+
+    // Densities
+    const dimensionedScalar& rho1() const { return rho1_; }
+    const dimensionedScalar& rho2() const { return rho2_; }
+    const dimensionedScalar& rho3() const { return rho3_; }
+
+    // Viscosities
+    const dimensionedScalar& mu1() const { return mu1_; }
+    const dimensionedScalar& mu2() const { return mu2_; }
+    const dimensionedScalar& mu3() const { return mu3_; }
+
+    // Mixture viscosity (weighted by phase fraction)
+    tmp<volScalarField> mu() const;
+
+    // Update (does nothing, but needed for interface)
+    void correct();
+};
+
+} // End namespace Foam
+
+#endif
+
+==================== ./createFields.H ====================
+// createFields.H — oilWaterAirParticleFoam
+// Three-phase immiscible mixture + two isoAdvection objects + particle cloud fields
+
+#include "createRDeltaT.H"
+
+Info<< "Reading field p_rgh\n" << endl;
+volScalarField p_rgh
+(
+    IOobject
+    (
+        "p_rgh", runTime.timeName(), mesh,
+        IOobject::MUST_READ, IOobject::AUTO_WRITE
+    ),
+    mesh
+);
+
+Info<< "Reading field U\n" << endl;
+volVectorField U
+(
+    IOobject
+    (
+        "U", runTime.timeName(), mesh,
+        IOobject::MUST_READ, IOobject::AUTO_WRITE
+    ),
+    mesh
+);
+
+#include "createPhi.H"
+
+Info<< "Constructing three-phase mixture\n" << endl;
+
+// Reads phases (air oil water) from constant/transportProperties.
+// alpha1 = alpha.air, alpha2 = alpha.oil, alpha3 = alpha.water
+immiscibleIncompressibleThreePhaseMixture mixture(U, phi);
+
+volScalarField& alpha1 = mixture.alpha1();   // air
+volScalarField& alpha2 = mixture.alpha2();   // oil
+volScalarField& alpha3 = mixture.alpha3();   // water
+
+const dimensionedScalar& rho1 = mixture.rho1();   // air density
+const dimensionedScalar& rho2 = mixture.rho2();   // oil density
+const dimensionedScalar& rho3 = mixture.rho3();   // water density
+
+// Dimensioned scalars for unambiguous field arithmetic.
+// Use  (one_ - alpha1)  not  (1.0 - alpha1) — the latter is ambiguous
+// in OpenFOAM's operator overload set and causes compile errors.
+const dimensionedScalar one_ ("one",  dimless, 1.0);
+const dimensionedScalar zero_("zero", dimless, 0.0);
+
+volScalarField rho
+(
+    IOobject
+    (
+        "rho", runTime.timeName(), mesh,
+        IOobject::READ_IF_PRESENT, IOobject::AUTO_WRITE
+    ),
+    alpha1*rho1 + alpha2*rho2 + alpha3*rho3
+);
+rho.oldTime();
+
+surfaceScalarField rhoPhi
+(
+    IOobject
+    (
+        "rhoPhi", runTime.timeName(), mesh,
+        IOobject::NO_READ, IOobject::NO_WRITE
+    ),
+    fvc::interpolate(rho)*phi
+);
+
+// Turbulence model — laminar (simulationType laminar in turbulenceProperties)
+// We use incompressibleInterPhaseTransportModel for API compatibility with
+// isobubbleFoam's UEqn.H structure.
+//#include "turbulentTransportModel.H"
+
+//autoPtr<incompressible::turbulenceModel> turbulence
+//(
+//    incompressible::turbulenceModel::New(U, phi, mixture)
+//);
+
+#include "readGravitationalAcceleration.H"
+#include "readhRef.H"
+#include "gh.H"
+
+// Dynamic viscosity for particle drag calculation
+volScalarField muc
+(
+    IOobject
+    (
+        "muc", runTime.timeName(), mesh,
+        IOobject::NO_READ, IOobject::NO_WRITE
+    ),
+    max(mixture.mu(), dimensionedScalar("mucMin", dimDynamicViscosity, 1e-5))
+);
+
+volScalarField p
+(
+    IOobject
+    (
+        "p", runTime.timeName(), mesh,
+        IOobject::NO_READ, IOobject::AUTO_WRITE
+    ),
+    p_rgh + rho*gh
+);
+
+label  pRefCell  = 0;
+scalar pRefValue = 0.0;
+setRefCell(p, p_rgh, pimple.dict(), pRefCell, pRefValue);
+
+if (p_rgh.needReference())
+{
+    p += dimensionedScalar
+    (
+        "p", p.dimensions(),
+        pRefValue - getRefCellValue(p, pRefCell)
+    );
+    p_rgh = p - rho*gh;
+}
+
+mesh.setFluxRequired(p_rgh.name());
+mesh.setFluxRequired(alpha1.name());
+
+#include "createMRF.H"
+#include "createFvOptions.H"
+
+// Two isoAdvection objects — one per transported phase.
+// isoAdvector reads the phase fraction field and phi; it reconstructs
+// the interface geometrically and computes face fluxes exactly.
+Info<< "Creating isoAdvection objects\n" << endl;
+isoAdvection advector1(alpha1, phi, U);   // for alpha.air
+isoAdvection advector2(alpha2, phi, U);   // for alpha.oil
+

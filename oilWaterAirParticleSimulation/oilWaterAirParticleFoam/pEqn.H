@@ -23,10 +23,16 @@
         fvc::makeAbsolute(phiHbyA, U);
     }
 
-    // Buoyancy flux (ghf * snGrad(rho) * rAUf * mesh.magSf())
+    // FIXED: stock OpenFOAM interFoam/interIsoFoam always has a MINUS sign
+    // here (verified against OpenFOAM-7/OpenFOAM.com source: phig =
+    // (mixture.surfaceTensionForce() - ghf*fvc::snGrad(rho))*rAUf*mesh.magSf()).
+    // This solver's buoyancy flux was missing that minus sign, which flips
+    // the buoyancy-driven pressure-correction term and cancels/reverses the
+    // effect of a correctly-signed g — this was the second bug behind "the
+    // bubble won't rise" (constant/g's sign was the first, already fixed).
     surfaceScalarField phig
     (
-        ghf*fvc::snGrad(rho)*rAUf*mesh.magSf()
+        -ghf*fvc::snGrad(rho)*rAUf*mesh.magSf()
     );
     phiHbyA += phig;
 

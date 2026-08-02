@@ -1,0 +1,13 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       uniformDimensionedScalarField;
+    object      hRef;
+}
+// Reference height used by ghf/hydrostatic-pressure formulations (p_rgh = p -
+// rho*g.(h - hRef)) to relate p_rgh to true pressure p. hRef=0 means heights
+// are measured directly from the domain's coordinate origin — fine here since
+// the mesh's own coordinates already start at the bottom (see blockMeshDict).
+dimensions      [0 1 0 0 0 0 0];
+value           0;

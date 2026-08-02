@@ -1,0 +1,42 @@
+#!/bin/bash
+cd "${0%/*}" || exit 1   # Run from this script's own directory regardless of caller's cwd
+
+caseName="${PWD##*/}"
+solver="fourPhaseDNSFoam"
+
+# DNSCase01 ships with a pre-baked constant/polyMesh. Do NOT regenerate it by
+# default: system/blockMeshDict currently has a known bug (the "outlet" and
+# "particleInlet" patches both claim the identical top face), so running
+# blockMesh here would fail, or silently produce a mesh where those two
+# patches are wrong. Only generate a mesh if one isn't already present.
+if [ -d constant/polyMesh ] && [ -f constant/polyMesh/owner ]; then
+    echo "Using existing constant/polyMesh (not regenerating - see README for the blockMeshDict caveat)."
+else
+    echo "No mesh found. Running blockMesh..."
+    echo "WARNING: system/blockMeshDict has a known outlet/particleInlet face conflict - this may fail or produce a wrong mesh. See README."
+    blockMesh > log.blockMesh 2>&1 || {
+        echo "blockMesh failed. See log.blockMesh"
+        exit 1
+    }
+fi
+
+echo "Running setFields..."
+setFields > log.setFields 2>&1 || {
+    echo "setFields failed. See log.setFields"
+    exit 1
+}
+
+echo "Running $solver..."
+$solver > "log.$solver" 2>&1 || {
+    echo "$solver failed. See log.$solver"
+    exit 1
+}
+
+echo "Creating ParaView file..."
+touch "${caseName}.foam"
+
+echo "Done."
+echo "Created:"
+echo "  log.setFields"
+echo "  log.$solver"
+echo "  ${caseName}.foam"
