@@ -1,0 +1,104 @@
+/*---------------------------------------------------------------------------*\
+  kinematicCloudProperties — oilWaterAirParticleFoam
+  Mineral particle (d=2 mm, rho=2500 kg/m³) inside an air bubble.
+
+  Force model rationale
+  ─────────────────────
+  gravity        : omitted — constant/g = (0 9.81 0) in this case points up,
+                   which would push the dense particle upward (wrong).
+                   Net gravitational settling is already encoded in the
+                   p_rgh pressure field via rho*(g & h).
+  sphereDrag     : Schiller-Naumann drag — dominant restoring force.
+  pressureGradient: provides bubble-wake suction (rho_f * V_p * DU_f/Dt).
+  virtualMass    : added-mass entrainment (Cvm=0.5 for sphere).
+
+  Size choice
+  ───────────
+  d = 2e-3 (2 mm) chosen for visual clarity in ParaView.
+  For realistic froth flotation use d = 5e-4 (0.5 mm).
+  d_p / d_bubble = 2 mm / 10 mm = 0.2 — acceptable size ratio.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+
+solution
+{
+    active          true;
+    coupled         no;
+    transient       yes;
+    cellValueSourceCorrection no;
+    maxCo           0.3;
+
+    sourceTerms     { schemes { U explicit 1; } }
+
+    interpolationSchemes
+    {
+        rho         cell;
+        U           cellPoint;
+        muc         cell;
+        p           cell;
+        DUcDt       cell;
+    }
+
+    integrationSchemes { U analytical; }
+}
+
+constantProperties
+{
+    rho0            2500;       // [kg/m³] mineral particle density
+}
+
+subModels
+{
+    particleForces
+{
+    sphereDrag;
+    //gravity;                        // water-phase carrier — gravity works correctly
+    pressureGradient { U U; }
+    virtualMass      { Cvm 0.5; }
+}
+
+    injectionModels
+    {
+        model1
+        {
+            type            manualInjection;
+            SOI             0;
+            massTotal       0;
+            parcelBasisType fixed;
+            nParticle       1;
+            positionsFile   "kinematicCloudPositions";
+            U0              (0 0 0);
+
+            sizeDistribution
+{
+    type fixedValue;
+    fixedValueDistribution
+    {
+        value   5e-4;   // 0.5 mm — realistic flotation particle
+    }
+}
+        }
+    }
+
+    dispersionModel             none;
+    patchInteractionModel       standardWallInteraction;
+    stochasticCollisionModel    none;
+    surfaceFilmModel            none;
+
+    standardWallInteractionCoeffs
+    {
+        type    rebound;
+        e       0.9;
+        mu      0.1;
+    }
+}
+
+cloudFunctions {}
+
+// ************************************************************************* //

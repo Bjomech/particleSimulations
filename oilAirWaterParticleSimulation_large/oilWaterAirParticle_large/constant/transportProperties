@@ -1,0 +1,35 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      transportProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Phase 1: air
+rho1       1.2;
+mu1        1.8e-5;
+
+// Phase 2: oil
+rho2       850;
+mu2        0.0425;     // = 850 * 5e-5
+
+// Phase 3: water
+rho3       1000;
+mu3        0.001;      // = 1000 * 1e-6
+
+// Surface tension coefficients (N/m)
+sigma12    0.03;
+sigma13    0.07;
+sigma23    0.05;
+
+// ************************************************************************* //
