@@ -1,0 +1,99 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solvers
+{
+    "alpha.*"
+    {
+        nAlphaCorr          2;
+        nAlphaSubCycles     2;
+        cAlpha              1;
+        reconstructionScheme isoAlpha;
+    }
+
+    pcorr
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-4;
+        relTol          0;
+    }
+
+    pcorrFinal
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-4;
+        relTol          0;
+    }
+
+    p_rgh
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-7;
+        relTol          0.01;
+    }
+
+    p_rghFinal
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-7;
+        relTol          0;
+    }
+
+    U
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-7;
+        relTol          0.1;
+    }
+
+    UFinal
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-7;
+        relTol          0;
+    }
+}
+
+PIMPLE
+{
+    nOuterCorrectors         2;
+    nCorrectors              2;
+    nNonOrthogonalCorrectors 0;
+    momentumPredictor        yes;
+    pRefCell                 1000;
+    pRefValue                0;
+}
+
+relaxationFactors
+{
+    fields
+    {
+        p_rgh           0.3;
+    }
+    equations
+    {
+        U               0.7;
+        ".*"            1;
+    }
+}
+
+// ************************************************************************* //

@@ -1,0 +1,81 @@
+#include "threePhaseInterfaceProperties.H"
+#include "fvc.H"
+#include "fvCFD.H"   // provides dimensionedScalar, dimless, etc.
+
+namespace Foam
+{
+
+threePhaseInterfaceProperties::threePhaseInterfaceProperties
+(
+    const incompressibleThreePhaseMixture& mixture
+)
+:
+    mixture_(mixture),
+    sigma12_
+    (
+        "sigma12",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma12")
+    ),
+    sigma13_
+    (
+        "sigma13",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma13")
+    ),
+    sigma23_
+    (
+        "sigma23",
+        dimensionSet(1,0,-2,0,0),
+        mixture_.lookup("sigma23")
+    ),
+    K1_
+    (
+        IOobject
+        (
+            "K1",
+            mixture_.alpha1().time().timeName(),
+            mixture_.alpha1().mesh(),
+            IOobject::NO_READ,
+            IOobject::AUTO_WRITE
+        ),
+        mixture_.alpha1().mesh(),
+        dimensionedScalar(dimless/dimLength, Zero)
+    ),
+    K2_(K1_),
+    K3_(K1_)
+{}
+
+tmp<surfaceScalarField> threePhaseInterfaceProperties::surfaceTensionForce() const
+{
+    return
+        fvc::interpolate(sigma13_*K1_)*fvc::snGrad(mixture_.alpha1())
+      + fvc::interpolate(sigma23_*K2_)*fvc::snGrad(mixture_.alpha2())
+      + fvc::interpolate(sigma23_*K3_)*fvc::snGrad(mixture_.alpha3());
+}
+
+void threePhaseInterfaceProperties::correct()
+{
+    // Dimensioned scalar with dimensions 1/length to avoid division by zero
+    const dimensionedScalar smallLength("small", dimless/dimLength, 1e-8);
+
+    K1_ = fvc::div
+    (
+        fvc::grad(mixture_.alpha1())
+      / (mag(fvc::grad(mixture_.alpha1())) + smallLength)
+    );
+
+    K2_ = fvc::div
+    (
+        fvc::grad(mixture_.alpha2())
+      / (mag(fvc::grad(mixture_.alpha2())) + smallLength)
+    );
+
+    K3_ = fvc::div
+    (
+        fvc::grad(mixture_.alpha3())
+      / (mag(fvc::grad(mixture_.alpha3())) + smallLength)
+    );
+}
+
+} // End namespace Foam
