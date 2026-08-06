@@ -1,0 +1,58 @@
+FoamFile { version 2.0; format ascii; class dictionary; location "system"; object controlDict; }
+application     oilWaterAirParticleFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+
+// endTime extended from 0.33 to 0.6: the 0.33s run on the narrow (2.1mm)
+// domain only started climbing near the very end (after ~0.27s stuck near a
+// side wall) and hadn't reached oil droplet 1 (y~0.0019) yet. With the wider
+// (5.6mm) domain the bubble should spend less time interacting with a wall,
+// but the extra runway is kept in case rise is still slower than hoped;
+// still just a starting guess, not re-tuned/verified for this geometry.
+endTime         0.6;
+
+// Initial guess only; adjustTimeStep below lets the solver grow/shrink deltaT
+// each step, bounded by maxCo and maxDeltaT.
+deltaT          1e-4;
+writeControl    adjustableRunTime;
+// writeInterval widened from 0.002 to 0.004 (endTime doubled, so this keeps
+// roughly the same number of written time directories as the 0.33s run).
+writeInterval   0.004;
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable yes;
+adjustTimeStep  yes;
+maxCo           0.5;         // Courant number cap used to grow/shrink deltaT
+maxDeltaT       4e-4;
+functions
+{
+    // Logs per-field min/max each 10 timesteps — useful sanity check for
+    // catching unbounded alpha (<0 or >1) or blow-up in U/p_rgh early.
+    fieldMinMax
+    {
+        type            fieldMinMax;
+        libs            (fieldFunctionObjects);
+        writeControl    timeStep;
+        writeInterval   10;
+        fields          (magU alpha.air alpha.oil alpha.water p_rgh);
+    }
+
+    // Writes the carrier-phase material derivative DU/Dt (DUcDt) to disk each
+    // timestep; consumed as ddtUc/DUcDt in the particle drag/added-mass force
+    // (see kinematicCloudProperties comments) since no turbulence model
+    // supplies this term in this laminar solver.
+    writeDUcDt
+    {
+        type            DDt;
+        libs            (fieldFunctionObjects);
+        field           U;
+        result          DUcDt;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+}

@@ -1,0 +1,18 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       uniformDimensionedVectorField;
+    object      g;
+}
+// FIXED: g was (0 +9.81 0) — pointing UP — which is backwards for this
+// solver's standard OpenFOAM p = p_rgh + rho*gh buoyancy formulation (see
+// createFields.H's #include "gh.H" and pEqn.H's phig term). With y as the
+// vertical axis and blockMeshDict's "top" patch at max y, g must point DOWN
+// (0 -9.81 0) for the light air phase to correctly buoy upward toward the
+// oil droplets. The previous (0 +9.81 0) value made the air phase sink
+// instead of rise. Corrected here; kinematicCloudProperties' particle
+// "gravity" force (previously disabled to compensate for this same wrong
+// sign) has also been re-enabled to match.
+dimensions      [0 1 -2 0 0 0 0];
+value           (0 -9.81 0);

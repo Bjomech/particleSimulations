@@ -1,0 +1,26 @@
+#!/bin/bash
+# Run this from your CASE directory (the already-completed coarse-mesh
+# run). Pulls alpha.air + alpha.oil + U from EVERY saved timestep so both
+# the bubble AND oil droplet trajectories can be reconstructed. No rerun
+# needed -- this just re-collects from the existing time directories.
+# Attach the resulting trajectory.tar.gz back to me.
+
+set -e
+OUT=trajectory_collect
+rm -rf "$OUT" trajectory.tar.gz
+mkdir -p "$OUT"
+
+TIMES=$(ls -d [0-9]*.[0-9]* [0-9]* 2>/dev/null | grep -E "^[0-9.]+$" | sort -gu)
+echo "$TIMES" > "$OUT/times_list.txt"
+
+for t in $TIMES; do
+    if [ -f "$t/alpha.air" ] && [ -f "$t/U" ]; then
+        mkdir -p "$OUT/$t"
+        cp "$t/alpha.air" "$t/U" "$OUT/$t/"
+        [ -f "$t/alpha.oil" ] && cp "$t/alpha.oil" "$OUT/$t/"
+    fi
+done
+
+tar -czf trajectory.tar.gz -C "$OUT" .
+rm -rf "$OUT"
+echo "Done. Attach: $(pwd)/trajectory.tar.gz"
