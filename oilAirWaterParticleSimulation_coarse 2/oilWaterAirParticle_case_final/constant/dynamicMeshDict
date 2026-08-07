@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      dynamicMeshDict;
+}
+// staticFvMesh: the mesh does not move/deform/refine at runtime (no AMR,
+// no mesh motion solver). Required file for solvers built on dynamicFvMesh
+// infrastructure even when the case itself uses a fixed mesh.
+dynamicFvMesh staticFvMesh;

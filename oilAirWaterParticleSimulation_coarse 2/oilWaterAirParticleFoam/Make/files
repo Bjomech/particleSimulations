@@ -1,0 +1,5 @@
+oilWaterAirParticleFoam.C
+incompressibleThreePhaseMixture.C
+threePhaseInterfaceProperties.C
+
+EXE = $(FOAM_USER_APPBIN)/oilWaterAirParticleFoam

@@ -1,7 +1,0 @@
-FoamFile { version 2.0; format ascii; class vectorField; object kinematicCloudPositions; }
-3
-(
-    (0.015 0.030 0.0005)
-    (0.015 0.040 0.0005)
-    (0.015 0.050 0.0005)
-)

@@ -1,9 +1,0 @@
-#!/bin/bash
-cd "${0%/*}" || exit 1
-
-
-blockMesh   > log.blockMesh   2>&1 && echo "blockMesh done"
-setFields   > log.setFields   2>&1 && echo "setFields done"
-oilWaterAirParticleFoam > log.solver 2>&1 &
-echo "Solver running in background (PID $!)"
-echo "Watch progress:  tail -f log.solver"

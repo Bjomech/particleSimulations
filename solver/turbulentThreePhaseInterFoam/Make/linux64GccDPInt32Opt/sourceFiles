@@ -1,4 +1,0 @@
-SOURCE = \
-turbulentThreePhaseFoam.C \
-
-# sources
