@@ -58,4 +58,7 @@ EXE_LIBS = \
     -llagrangian \
     -llagrangianIntermediate \
     -lsurfMesh \
-    -llagrangianTurbulence
+    -llagrangianTurbulence \
+    -Wl,-rpath,$(FOAM_LIBBIN) \
+    -Wl,-rpath,$(FOAM_LIBBIN)/dummy \
+    -Wl,-rpath,$(WM_PROJECT_DIR)/env/lib

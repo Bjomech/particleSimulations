@@ -1,5 +1,6 @@
 oilWaterAirParticleFoam.C
 incompressibleThreePhaseMixture.C
 threePhaseInterfaceProperties.C
+makeOilWaterAirParticleForces.C
 
 EXE = $(FOAM_USER_APPBIN)/oilWaterAirParticleFoam

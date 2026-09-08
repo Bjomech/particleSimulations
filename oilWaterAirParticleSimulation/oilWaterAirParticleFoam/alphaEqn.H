@@ -1,105 +1,223 @@
-// alphaEqn.H — three-phase sequential constrained isoAdvection
+// alphaEqn.H  (CONSERVATIVE MULES VERSION — supersedes the isoAdvector fix)
 //
-// Key fixes vs previous version:
-//   1. Hard clamp replaced by mass-conservative scale-back for alpha1
-//   2. rhoPhi built from both advectors (air + oil contributions)
-//   3. This file must be included ONCE per timestep, BEFORE pimple.loop()
+// Why this file was rewritten again
+// ──────────────────────────────────
+// The previous fix (two independent isoAdvector instances + a clamp/rescale
+// "scale = 1/max(alpha1+alpha2,1)" step) bounds each phase individually but
+// NOT their sum. Whenever the two independently-reconstructed geometric
+// interfaces (bubble vs. droplet) happen to overlap in a cell, the clamp
+// deletes volume from BOTH phases symmetrically, converting it into
+// "water". This is exactly what produced the measured -8.76 % air / -7.99 %
+// oil volume drift in the run that triggered this rewrite, concentrated at
+// the timesteps where the rising bubble first touches an oil droplet -
+// i.e. precisely the physics this thesis is about.
 //
-// Strategy:
-//   STEP 1 — advect alpha.air; scale back any overshoot (conserves mass)
-//   STEP 2 — pre-cap alpha.oil, advect, post-cap (oil can't enter pure-air cells)
-//   STEP 3 — alpha.water = 1 - alpha.air - alpha.oil  (algebraic remainder)
+// isoAdvector is a *geometric* PLIC method; there is no widely used,
+// verified "isoAdvector for N immiscible phases with joint boundedness" in
+// mainline OpenFOAM (only the two-phase interIsoFoam uses it). What OpenFOAM
+// itself does for N immiscible phases is an *algebraic* MULES scheme with a
+// JOINT flux limiter across all phases at once. This file ports that
+// scheme, verified against the real ESI/OpenCFD (openfoam.com, the fork
+// v2512 belongs to) N-phase source:
+//
+//   Foam::multiphaseMixture::solveAlphas()
+//   applications/solvers/multiphase/multiphaseInterFoam/multiphaseMixture/multiphaseMixture.C
+//   https://www.openfoam.com/documentation/guides/latest/api/multiphaseMixture_8C_source.html
+//
+// NOTE (ESI vs Foundation API - this caused real compile errors on v2512):
+// an earlier revision of this file was ported from the FOUNDATION
+// (openfoam.org) reference (incompressibleMultiphaseVoF/alphaPredictor.C),
+// whose MULES API differs: Foundation has a MULES::control class and a
+// limitSum(alphas, alphaPhis, phi) overload; ESI v2512 has NEITHER. The ESI
+// algorithm instead: (1) MULES::limit(...) with returnCorr = true, so each
+// phase's flux is reduced to its limited CORRECTION; (2) a single-argument
+// MULES::limitSum(alphaPhiCorrs) that jointly rescales the three correction
+// fluxes; (3) each phase's bounded upwind flux is added back
+// (upwind<scalar>(mesh, phi).flux(alpha)) before MULES::explicitSolve. Same
+// physics/boundedness, different decomposition. Limiter tuning in ESI is
+// read internally by MULES from fvSolution's "alpha.*" dict (nLimiterIter,
+// default 3) - there is no control object to construct here.
+//
+// How it works, in one sentence: instead of advecting each phase then
+// clamping the result, build all three phases' compression-corrected fluxes
+// FIRST, bound each individually with MULES::limit, then call
+// MULES::limitSum() to jointly rescale the three fluxes so their SUM can
+// never transport more than one full cell volume in a single step - i.e.
+// the three phases cannot geometrically over-claim a cell in the first
+// place. This is exactly analogous to what MULES::limitSum was written for
+// (see src/finiteVolume/fvMatrices/solvers/MULES/MULES.H).
+//
+// Trade-off you are accepting with this fix
+// ──────────────────────────────────────────
+// MULES with interface compression is algebraic/flux-based, not geometric.
+// It is slightly more diffusive than isoAdvector's PLIC reconstruction, i.e.
+// the air/oil/water interfaces will be a cell or two less sharp than
+// before. This is the same trade-off stock OpenFOAM's own N-phase immiscible
+// solver makes, so it is a defensible, mainstream choice for a case with
+// this many simultaneous interfaces - not something invented for this
+// project.
+//
+// What changed relative to the isoAdvector version
+// ──────────────────────────────────────────────────
+//  * isoAdvector (advector1/advector2, createFields.H) is no longer used at
+//    all - removed from createFields.H and oilWaterAirParticleFoam.C.
+//  * All three phases (air/oil/water) are now explicitly MULES-solved (the
+//    old code derived alpha3 = 1 - alpha1 - alpha2 algebraically; the
+//    reference N-phase algorithm solves alpha3 the same way as the other
+//    two and only uses a tiny defensive renormalisation at the end).
+//  * fvSchemes needs one new entry: div(phirb,alpha) Gauss interfaceCompression;
+//    (added). fvSolution's "alpha.*" subdict lost its isoAdvector-only keys
+//    (reconstructionScheme, isoFaceTol, ...) and kept cAlpha.
+//  * No sub-cycling is implemented at all (nAlphaSubCycles in fvSolution is
+//    documentation-only and not read here) - deliberately, to keep this
+//    rewrite's OpenFOAM-API surface as small and close to the verified
+//    reference as possible, since none of this can be compiled/tested in
+//    this environment. If you need sub-cycling at a coarser mesh, say so
+//    and it can be added.
 
 {
-    dimensionedScalar totalDeltaT = runTime.deltaT();
+    const dictionary& alphaControls = mesh.solverDict(alpha1.name());
+    const scalar cAlpha(alphaControls.get<scalar>("cAlpha"));
 
-    surfaceScalarField rhoPhiSum
-    (
-        IOobject("rhoPhiSum", runTime.timeName(), mesh),
-        mesh,
-        dimensionedScalar(rhoPhi.dimensions(), Zero)
-    );
+    const word alphaScheme("div(phi,alpha)");
+    const word alpharScheme("div(phirb,alpha)");
 
-    for
-    (
-        subCycle<volScalarField> alphaSubCycle(alpha1, nAlphaSubCycles);
-        !(++alphaSubCycle).end();
-    )
+    // Compression velocity magnitude, capped at the local face velocity -
+    // identical to the reference algorithm and to stock two-phase interFoam.
+    surfaceScalarField phic(mag(phi/mesh.magSf()));
+    phic = min(cAlpha*phic, max(phic));
+
+    // Non-owning references to the three phase fields / the three phases
+    // are fixed (air, oil, water); a UPtrList just lets the compression-flux
+    // loop below iterate "for every OTHER phase" generically, mirroring
+    // the reference's forAllIter(phases_) structure without needing the
+    // phase/PtrDictionary machinery multiphaseInterFoam uses internally.
+    UPtrList<volScalarField> alphaFields(3);
+    alphaFields.set(0, &alpha1);
+    alphaFields.set(1, &alpha2);
+    alphaFields.set(2, &alpha3);
+
+    // PtrList (owning) because MULES::limitSum needs to hold onto all three
+    // correction fluxes at once - built with `new`, exactly as the
+    // reference solveAlphas() does.
+    PtrList<surfaceScalarField> alphaPhis(3);
+
+    for (label i = 0; i < 3; i++)
     {
-        // ── STEP 1: advect alpha.air ──────────────────────────────────────
+        volScalarField& alphai = alphaFields[i];
+
+        alphaPhis.set
+        (
+            i,
+            new surfaceScalarField
+            (
+                "phi" + alphai.name() + "Corr",
+                fvc::flux(phi, alphai, alphaScheme)
+            )
+        );
+
+        surfaceScalarField& alphaPhi = alphaPhis[i];
+
+        // Compression term, summed pairwise over the two OTHER phases -
+        // this is what actively sharpens/holds each interface and is the
+        // piece that was missing entirely from a naive per-phase MULES
+        // solve.
+        for (label j = 0; j < 3; j++)
         {
-            volScalarField::Internal Sp1
+            if (j == i) continue;
+
+            volScalarField& alphaj = alphaFields[j];
+
+            surfaceScalarField phir(phic*mixture.nHatf(alphai, alphaj));
+
+            alphaPhi += fvc::flux
             (
-                IOobject("Sp1", runTime.timeName(), mesh),
-                mesh, dimensionedScalar(dimless/dimTime, Zero)
+                -fvc::flux(-phir, alphaj, alpharScheme),
+                alphai,
+                alpharScheme
             );
-            volScalarField::Internal Su1
-            (
-                IOobject("Su1", runTime.timeName(), mesh),
-                mesh, dimensionedScalar(dimless/dimTime, Zero)
-            );
-            advector1.advect(Sp1, Su1);
-
-            // Mass-conservative scale-back:
-            // isoAdvector may produce alpha1 slightly > 1 at the interface.
-            // Hard clipping destroys that mass; instead we measure the total
-            // before and after clamping and rescale to return the lost mass
-            // proportionally to all cells that still hold air.
-            scalar sumBefore =
-                gSum(alpha1.primitiveField() * mesh.V().field());
-
-            alpha1 = max(min(alpha1, one_), zero_);
-
-            scalar sumAfter =
-                gSum(alpha1.primitiveField() * mesh.V().field());
-
-            if (sumAfter > SMALL && mag(sumBefore - sumAfter) > SMALL)
-            {
-                alpha1 *= sumBefore / sumAfter;
-                alpha1 = min(alpha1, one_);   // safety — stays bounded
-            }
         }
 
-        // ── STEP 2: advect alpha.oil (constrained) ────────────────────────
-        alpha2 = min(max(alpha2, zero_), one_ - alpha1);
-        {
-            volScalarField::Internal Sp2
-            (
-                IOobject("Sp2", runTime.timeName(), mesh),
-                mesh, dimensionedScalar(dimless/dimTime, Zero)
-            );
-            volScalarField::Internal Su2
-            (
-                IOobject("Su2", runTime.timeName(), mesh),
-                mesh, dimensionedScalar(dimless/dimTime, Zero)
-            );
-            advector2.advect(Sp2, Su2);
-            alpha2 = min(max(alpha2, zero_), one_ - alpha1);
-        }
-
-        // ── STEP 3: alpha.water = remainder ──────────────────────────────
-        alpha3 = max(one_ - alpha1 - alpha2, zero_);
-
-        // ── rhoPhi: blend fluxes from both advectors ──────────────────────
-        // advector1 carries the air/water interface flux (rho1 vs rho3)
-        // advector2 carries the oil/water interface flux (rho2 vs rho3)
-        // Summing both gives a consistent density flux for the momentum eqn.
-        surfaceScalarField rhoPhiAlpha1 = advector1.getRhoPhi(rho1, rho3);
-        surfaceScalarField rhoPhiAlpha2 = advector2.getRhoPhi(rho2, rho3);
-
-        rhoPhiSum += (runTime.deltaT()/totalDeltaT)
-                   * (rhoPhiAlpha1 + rhoPhiAlpha2);
+        // Per-phase bound: keeps this one phase in [0,1] on its own.
+        // returnCorr = true (last argument): on return alphaPhi holds only
+        // the limited CORRECTION flux (full flux minus bounded upwind part),
+        // which is what the ESI limitSum below expects; the upwind part is
+        // added back before explicitSolve - exactly as in solveAlphas().
+        MULES::limit
+        (
+            1.0/mesh.time().deltaTValue(),
+            geometricOneField(),
+            alphai,
+            phi,
+            alphaPhi,
+            zeroField(),
+            zeroField(),
+            oneField(),
+            zeroField(),
+            true
+        );
     }
 
-    rhoPhi = rhoPhiSum;
+    // ── The actual fix: joint bound across ALL THREE phases at once ───────
+    // Jointly rescales the three limited correction fluxes so their sum
+    // cannot transport more than one cell volume of "stuff" per step, i.e.
+    // it is no longer possible for air+oil to geometrically over-claim a
+    // cell the way the old isoAdvector clamp discovered only AFTER the
+    // fact. (ESI single-argument overload; operates on corrections, the
+    // bounded upwind parts are consistent by construction.)
+    MULES::limitSum(alphaPhis);
+
+    volScalarField sumAlpha
+    (
+        IOobject("sumAlpha", runTime.timeName(), mesh),
+        mesh,
+        dimensionedScalar(dimless, Zero)
+    );
+
+    for (label i = 0; i < 3; i++)
+    {
+        surfaceScalarField& alphaPhi = alphaPhis[i];
+
+        // Rebuild the full phase flux: jointly-limited correction + bounded
+        // upwind flux (identical to solveAlphas(); upwind.H is included by
+        // oilWaterAirParticleFoam.C).
+        alphaPhi += upwind<scalar>(mesh, phi).flux(alphaFields[i]);
+
+        MULES::explicitSolve(geometricOneField(), alphaFields[i], alphaPhi);
+        sumAlpha += alphaFields[i];
+    }
+
+    // Consistent density flux built directly from the three full, jointly
+    // bounded phase fluxes (correction + upwind, as rebuilt above) -
+    // replaces the old getRhoPhi()-based expression.
+    rhoPhi = alphaPhis[0]*rho1 + alphaPhis[1]*rho2 + alphaPhis[2]*rho3;
+
+    // Defensive renormalisation of the tiny (sub-percent, floating-point /
+    // finite-MULES-tolerance level) residual left after the joint bound -
+    // ported verbatim from the reference alphaSolve(), NOT the old
+    // "delete-from-both-phases" clamp. With limitSum already enforcing the
+    // bound above, sumAlpha should already be within ~1e-6 of 1 everywhere;
+    // this only mops up what's left.
+    volScalarField sumCorr(1.0 - sumAlpha);
+    alpha1 += alpha1*sumCorr;
+    alpha2 += alpha2*sumCorr;
+    alpha3 += alpha3*sumCorr;
 }
 
-Info<< "Phase fractions:"
-    << "  alpha.air = "
-    << alpha1.weightedAverage(mesh.V()).value()
-    << "  Min=" << min(alpha1).value()
-    << "  Max=" << max(alpha1).value()
-    << "  alpha.oil = "
-    << alpha2.weightedAverage(mesh.V()).value()
-    << "  Max=" << max(alpha2).value()
-    << endl;
+// ── conservation monitor ─────────────────────────────────────────────────
+// Watch these two numbers: with the joint MULES bound above they should now
+// stay flat to within a fraction of a percent for the whole run, including
+// through bubble/droplet contact events.
+{
+    const scalar Vair  = gSum(alpha1.primitiveField()*mesh.V().field());
+    const scalar Voil  = gSum(alpha2.primitiveField()*mesh.V().field());
+
+    Info<< "Phase fractions:"
+        << "  alpha.air = "   << alpha1.weightedAverage(mesh.V()).value()
+        << " (V = " << Vair*1e9 << " mm^3)"
+        << "  alpha.oil = "   << alpha2.weightedAverage(mesh.V()).value()
+        << " (V = " << Voil*1e9 << " mm^3)"
+        << "  min/max alpha.water = "
+        << min(alpha3).value() << "/" << max(alpha3).value()
+        << endl;
+}

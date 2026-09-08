@@ -1,0 +1,35 @@
+FoamFile { version 2.0; format ascii; class dictionary; object blockMeshDict; }
+scale 0.07; // domain shrunk uniformly by 0.07 so bubble/oil/particle stay proportionally sized
+// x-extent widened from 0.030 to 0.080 (pre-scale) -> actual Lx grows from 2.1mm to 5.6mm,
+// i.e. 8x the 0.7mm bubble diameter (a common rule of thumb for keeping side-wall
+// confinement effects small). The original 2.1mm-wide domain (only 3x the bubble
+// diameter) let the bubble drift sideways into a wall within ~30ms of the run and
+// stall there for most of the simulation instead of rising freely. Cell count in x is
+// scaled up proportionally (150->400) to keep the same 14um cell size (dx=dy still).
+// DIAGNOSTIC TEST -- intermediate resolution: cell counts halved from the
+// fine mesh (400->200, 500->250), giving dx=dy=28um instead of 14um. This
+// sits exactly between the fine mesh (14um, frozen bubble in every test so
+// far) and the coarse diagnostic variant (56um, bubble rises cleanly to
+// ~90% of domain height by t=0.6 using this same current solver). Same
+// domain size, same setFieldsDict, same everything else -- purely testing
+// where along the resolution spectrum the behavior switches from "rises"
+// to "frozen".
+vertices
+(
+    (0.000  0.000  0.000)
+    (0.080  0.000  0.000)
+    (0.080  0.100  0.000)
+    (0.000  0.100  0.000)
+    (0.000  0.000  0.001)
+    (0.080  0.000  0.001)
+    (0.080  0.100  0.001)
+    (0.000  0.100  0.001)
+);
+blocks ( hex (0 1 2 3 4 5 6 7) (200 250 1) simpleGrading (1 1 1) );
+edges ();
+boundary
+(
+    walls       { type wall;  faces ( (0 1 5 4) (0 3 7 4) (1 2 6 5) ); }
+    top         { type patch; faces ( (3 2 6 7) ); }
+    frontAndBack{ type empty; faces ( (0 1 2 3) (4 5 6 7) ); }
+);

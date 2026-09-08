@@ -15,7 +15,6 @@ EXE_INC = \
     -I$(FOAM_SRC)/transportModels/interfaceProperties/lnInclude \
     -I$(FOAM_SRC)/transportModels/twoPhaseMixture/lnInclude \
     -I$(FOAM_SRC)/transportModels/twoPhaseProperties/lnInclude \
-    -I$(FOAM_SRC)/transportModels/geometricVoF/lnInclude \
     -I$(FOAM_SRC)/surfMesh/lnInclude \
     -I$(FOAM_SRC)/phaseSystemModels/twoPhaseInter/incompressibleInterPhaseTransportModel/lnInclude \
     -I$(FOAM_SRC)/phaseSystemModels/twoPhaseInter/VoFphaseIncompressibleTurbulenceModels/lnInclude \
@@ -46,7 +45,6 @@ EXE_LIBS = \
     -limmiscibleIncompressibleTwoPhaseMixture \
     -ltwoPhaseProperties \
     -linterfaceProperties \
-    -lgeometricVoF \
     -lturbulenceModels \
     -lincompressibleTurbulenceModels \
     -lVoFphaseTurbulentTransportModels \
@@ -58,4 +56,7 @@ EXE_LIBS = \
     -llagrangian \
     -llagrangianIntermediate \
     -lsurfMesh \
-    -llagrangianTurbulence
+    -llagrangianTurbulence \
+    -Wl,-rpath,$(FOAM_LIBBIN) \
+    -Wl,-rpath,$(FOAM_LIBBIN)/dummy \
+    -Wl,-rpath,$(WM_PROJECT_DIR)/env/lib

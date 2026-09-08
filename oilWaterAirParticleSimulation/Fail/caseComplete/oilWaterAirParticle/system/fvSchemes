@@ -1,0 +1,77 @@
+/*---------------------------------------------------------------------------*\
+  fvSchemes  (FIXED VERSION)
+
+  Changes
+  ───────
+  1. Added div((mu*dev2(T(grad(U))))) - required by the deviatoric viscous term
+     now present in UEqn.H. Without the entry OpenFOAM aborts with
+     "Cannot find divScheme for div((mu*dev2(T(grad(U)))))".
+  2. Added grad(nHat) - the curvature calculation uses fvc::grad(alpha, "nHat")
+     exactly like stock interfaceProperties.
+  3. The div(phi,alpha.*) entries are not used by isoAdvector (geometric
+     advection, no flux-limited scheme) but are harmless and are kept in case
+     you switch a phase back to MULES.
+  4. limitedLinearV instead of limitedLinear for the momentum convection term -
+     the V variant limits on the vector direction and is what the isoAdvector
+     reference cases use.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSchemes;
+}
+
+ddtSchemes
+{
+    default         Euler;
+}
+
+gradSchemes
+{
+    default         Gauss linear;
+    grad(U)         Gauss linear;
+    grad(nHat)      Gauss linear;
+}
+
+divSchemes
+{
+    default             none;
+
+    div(rhoPhi,U)       Gauss limitedLinearV 1;
+
+    div(phi,alpha.air)   Gauss vanLeer;
+    div(phi,alpha.oil)   Gauss vanLeer;
+    div(phi,alpha.water) Gauss vanLeer;
+    div(phi,alpha)       Gauss vanLeer;
+
+    div((mu*dev2(T(grad(U)))))   Gauss linear;
+    div((muEff*dev(T(grad(U))))) Gauss linear;
+
+    div(nHat)           Gauss linear;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
+}
+
+fluxRequired
+{
+    default         no;
+    p_rgh;
+    "alpha.*";
+}
+
+// ************************************************************************* //

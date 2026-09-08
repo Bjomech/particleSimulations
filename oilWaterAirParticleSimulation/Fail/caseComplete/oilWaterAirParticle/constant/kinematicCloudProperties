@@ -1,0 +1,143 @@
+/*---------------------------------------------------------------------------*\
+  kinematicCloudProperties - oilWaterAirParticleFoam   (FIXED VERSION)
+  SMALL case (oilWaterAirParticle). Mineral particles (rho = 2500 kg/m3) in a
+  water/oil/air VOF field.
+
+  Force models
+  ────────────
+  gravity          : MANDATORY. In OpenFOAM the gravity/buoyancy force on a
+                     parcel is applied ONLY if it is listed here - see
+                     GravityForce::calcNonCoupled:
+                         Su = mass*g*(1 - rho_c/rho_p)
+                     Nothing in KinematicParcel::calcVelocity adds g by itself.
+                     Without this entry the particles are effectively weightless
+                     (that is what happened in the delivered
+                     oilWaterAirParticle_large run: the two lower parcels just
+                     drifted sideways for 0.32 s instead of settling).
+                     Note that constant/g is (0 -9.81 0), i.e. already correct,
+                     and that this force term ALREADY contains buoyancy through
+                     rho_c, so there is no double counting with pressureGradient.
+  sphereDrag       : Schiller-Naumann drag.
+  pressureGradient : rho_c/rho_p * DUc/Dt - wake suction.
+  virtualMass      : added mass, Cvm = 0.5 for a sphere.
+
+  Scale check for the SMALL case (5.6 x 7 mm, dx = 14 um, d_b = 0.7 mm)
+  ────────────────────────────────────────────────────────────────────
+  Particle diameter is set to 14 um, i.e. exactly one cell, not the previous
+  35 um. Reason: the Lagrangian cloud is a POINT-particle formulation - the
+  parcel is a point that samples the carrier field at its own position, and the
+  drag correlation assumes the undisturbed carrier velocity. That assumption
+  requires d_p <= dx. At 35 um the parcel spanned 2.5 cells, which a thesis
+  reviewer will flag, and the interpolated "undisturbed" velocity it feels is
+  really its own displaced flow.
+
+  Consequence you must be aware of and state explicitly:
+
+      d_p = 14 um -> Stokes settling velocity  0.16 mm/s
+                  -> particle response time    tau_p = 27 us
+                  -> Stokes number St = tau_p * U_b / d_b = 0.005
+
+  With St ~ 5e-3 the particles are essentially passive tracers. They cannot be
+  captured by inertia, and they cannot outrun the bubble either. So at this
+  length scale any "trapping" you observe is caused by
+
+     (a) recirculation in the bubble wake carrying tracers upward, or
+     (b) an interface-attachment force, which no standard OpenFOAM
+         ParticleForce provides - it needs a custom model (see README).
+
+  This is not a bug in the setup - it is a scale-invariance problem. Bubble
+  dynamics scale with Eo = rho*g*d_b^2/sigma and Mo; particle inertia scales
+  with St. Shrinking the whole geometry by 0.07 kept Eo small (0.069) but
+  destroyed St. For St = O(0.1-1) you need the 10 mm bubble with 250-500 um
+  particles (St = 0.17-0.69). Worth one paragraph in the thesis.
+
+  If you accept the point-particle violation, set the value back to 3.5e-5
+  (settling 1.0 mm/s, St = 0.032) - still a tracer, just a less rigorous one.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+
+solution
+{
+    active          true;
+    coupled         no;         // one-way coupling; see note below
+    transient       yes;
+    cellValueSourceCorrection no;
+    maxCo           0.3;
+
+    sourceTerms
+    {
+        schemes { U explicit 1; }
+    }
+
+    interpolationSchemes
+    {
+        rho         cell;
+        U           cellPoint;
+        muc         cell;
+        p           cell;
+        DUcDt       cell;
+    }
+
+    integrationSchemes { U analytical; }
+}
+
+constantProperties
+{
+    rho0            2500;       // [kg/m3] mineral particle density
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        gravity;                        // mandatory - see note above
+        pressureGradient { U U; }
+        virtualMass      { Cvm 0.5; }
+    }
+
+    injectionModels
+    {
+        model1
+        {
+            type            manualInjection;
+            SOI             0;
+            massTotal       0;          // ignored for parcelBasisType fixed
+            parcelBasisType fixed;
+            nParticle       1;
+            positionsFile   "kinematicCloudPositions";
+            U0              (0 0 0);
+
+            sizeDistribution
+            {
+                type fixedValue;
+                fixedValueDistribution
+                {
+                    value   1.4e-5;     // 14 um = 1 cell (point-particle limit)
+                }
+            }
+        }
+    }
+
+    dispersionModel             none;
+    patchInteractionModel       standardWallInteraction;
+    stochasticCollisionModel    none;
+    surfaceFilmModel            none;
+
+    standardWallInteractionCoeffs
+    {
+        type    rebound;
+        e       0.9;
+        mu      0.1;
+    }
+}
+
+cloudFunctions {}
+
+// ************************************************************************* //

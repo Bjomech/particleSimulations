@@ -1,9 +1,19 @@
-/*--------------------------------*- C++ -*----------------------------------*\
-| =========                 |                                                 |
-| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
-|  \\    /   O peration     | Version:  v2512                                 |
-|   \\  /    A nd           | Website:  www.openfoam.com                      |
-|    \\/     M anipulation  |                                                 |
+/*---------------------------------------------------------------------------*\
+  fvSchemes  (FIXED VERSION)
+
+  Changes
+  ───────
+  1. Added div((mu*dev2(T(grad(U))))) - required by the deviatoric viscous term
+     now present in UEqn.H. Without the entry OpenFOAM aborts with
+     "Cannot find divScheme for div((mu*dev2(T(grad(U)))))".
+  2. Added grad(nHat) - the curvature calculation uses fvc::grad(alpha, "nHat")
+     exactly like stock interfaceProperties.
+  3. Added div(phirb,alpha) - the interface-compression flux scheme used by
+     the MULES-based alphaEqn.H (replaces the isoAdvector advection used in
+     an earlier revision). div(phi,alpha.*) entries are the plain advection
+     scheme for the same equation.
+  4. limitedLinearV instead of limitedLinear for the momentum convection term -
+     the V variant limits on the vector direction, standard for VOF cases.
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
@@ -12,45 +22,35 @@ FoamFile
     class       dictionary;
     object      fvSchemes;
 }
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 ddtSchemes
 {
-    default         Euler;   // 1st-order implicit time stepping
+    default         Euler;
 }
 
 gradSchemes
 {
     default         Gauss linear;
     grad(U)         Gauss linear;
+    grad(nHat)      Gauss linear;
 }
 
 divSchemes
 {
-    default             none;   // force every div() term to be listed explicitly
+    default             none;
 
-    div(rhoPhi,U)       Gauss limitedLinear 1;   // momentum convection
+    div(rhoPhi,U)       Gauss limitedLinearV 1;
 
-    // Bounded (0..1) advection of each phase fraction; isoAdvector
-    // (reconstructionScheme isoAlpha, see fvSolution) does the actual
-    // geometric advection in this solver — these vanLeer schemes are the
-    // divSchemes entry OpenFOAM's alphaEqn machinery still looks up, even
-    // though the isoAdvector path does not directly evaluate div(phi,alpha.X)
-    // the way a MULES-based solver would.
     div(phi,alpha.air)   Gauss vanLeer;
     div(phi,alpha.oil)   Gauss vanLeer;
     div(phi,alpha.water) Gauss vanLeer;
     div(phi,alpha)       Gauss vanLeer;
+    div(phirb,alpha)     Gauss interfaceCompression;
 
-    div((muEff*dev(T(grad(U))))) Gauss linear;   // viscous stress term in UEqn.H
+    div((mu*dev2(T(grad(U)))))   Gauss linear;
+    div((muEff*dev(T(grad(U))))) Gauss linear;
 
-    // Interface-normal-vector terms used for surface tension / curvature
-    // reconstruction (threePhaseInterfaceProperties.C).
-    div((grad(alpha.air)|(mag(grad(alpha.air))+small)))   Gauss linear;
-    div((grad(alpha.oil)|(mag(grad(alpha.oil))+small)))   Gauss linear;
-    div((grad(alpha.water)|(mag(grad(alpha.water))+small))) Gauss linear;
     div(nHat)           Gauss linear;
-
 }
 
 laplacianSchemes
@@ -71,8 +71,8 @@ snGradSchemes
 fluxRequired
 {
     default         no;
-    p_rgh;      // pressure needs a consistent flux for the PISO/PIMPLE loop
-    "alpha.*";  // phase fractions need it for the isoAdvector/VOF interface reconstruction
+    p_rgh;
+    "alpha.*";
 }
 
 // ************************************************************************* //

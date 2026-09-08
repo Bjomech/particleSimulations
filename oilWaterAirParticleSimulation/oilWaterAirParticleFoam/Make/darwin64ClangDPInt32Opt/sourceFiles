@@ -1,0 +1,7 @@
+SOURCE = \
+oilWaterAirParticleFoam.C \
+incompressibleThreePhaseMixture.C \
+threePhaseInterfaceProperties.C \
+makeOilWaterAirParticleForces.C \
+
+# sources

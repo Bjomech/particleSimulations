@@ -1,9 +1,25 @@
-/*--------------------------------*- C++ -*----------------------------------*\
-| =========                 |                                                 |
-| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
-|  \\    /   O peration     | Version:  v2512                                 |
-|   \\  /    A nd           | Website:  www.openfoam.com                      |
-|    \\/     M anipulation  |                                                 |
+/*---------------------------------------------------------------------------*\
+  fvSolution  (FIXED VERSION)
+
+  Changes
+  ───────
+  1. Relaxation removed. This is a transient PIMPLE run with 3 outer
+     correctors; relaxing p_rgh by 0.3 and U by 0.7 damps the physical
+     transient (stock interFoam/interIsoFoam use no relaxation at all).
+  2. "alpha.*" now controls a MULES-based scheme (alphaEqn.H), not
+     isoAdvector. cAlpha is the interface-compression strength (read
+     directly by alphaEqn.H). nAlphaSubCycles is kept only as documentation -
+     sub-cycling is not implemented in this revision (see alphaEqn.H header
+     comment) and the entry is not read. The isoAdvector-only keys that used to live here
+     (reconstructionScheme, isoFaceTol, surfCellTol, nAlphaBounds, snapTol,
+     clip, writeIsoFaces) have been removed - they are no longer read by
+     anything.
+  3. Tighter p_rgh relTol during the outer iterations (1e-3 instead of 1e-2),
+     and 3 outer correctors: with surface tension in phiHbyA the pressure
+     equation has to converge properly or the capillary/pressure balance is
+     never reached.
+  4. momentumPredictor no - standard choice for surface-tension-dominated VOF;
+     switch back to yes if you see the predictor helping.
 \*---------------------------------------------------------------------------*/
 FoamFile
 {
@@ -12,100 +28,79 @@ FoamFile
     class       dictionary;
     object      fvSolution;
 }
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 solvers
 {
-    // isoAdvector geometric VOF settings for all three alpha.* fields.
-    // nAlphaCorr/cAlpha are the same knobs a MULES-based solver would use,
-    // but isoAdvector's reconstructionScheme (isoAlpha = plane-based interface
-    // reconstruction) drives the actual advection; nAlphaSubCycles sub-cycles
-    // the alpha update within each outer PIMPLE step for stability at high Co.
     "alpha.*"
     {
-        nAlphaCorr          2;
-        nAlphaSubCycles     2;
         cAlpha              1;
-        reconstructionScheme isoAlpha;
+        nAlphaSubCycles     1;   // documentation only - not read by alphaEqn.H;
+                                  // sub-cycling isn't implemented, see its header
+
+        // Optional ESI MULES limiter tuning, read internally by
+        // MULES::limiter from this dict (there is no MULES::control class
+        // in ESI v2512 - the keys below are the ESI ones, defaults shown):
+        // nLimiterIter        3;
+        // extremaCoeff        0;
     }
 
-    // Pressure-correction solve used to make the initial flux divergence-free
-    // before the momentum predictor (standard PIMPLE "correctPhi" step).
-    pcorr
+    "pcorr.*"
     {
-        solver          GAMG;
-        smoother        GaussSeidel;
-        tolerance       1e-4;
+        solver          PCG;
+        preconditioner
+        {
+            preconditioner  GAMG;
+            tolerance       1e-5;
+            relTol          0;
+            smoother        GaussSeidel;
+        }
+        tolerance       1e-5;
         relTol          0;
+        maxIter         50;
     }
 
-    pcorrFinal
-    {
-        solver          GAMG;
-        smoother        GaussSeidel;
-        tolerance       1e-4;
-        relTol          0;
-    }
-
-    // Main pressure (p_rgh) solve inside the outer PIMPLE loop; looser
-    // relTol (0.01) than the Final variant since it's re-solved next
-    // outer iteration anyway.
     p_rgh
     {
         solver          GAMG;
         smoother        GaussSeidel;
-        tolerance       1e-7;
-        relTol          0.01;
+        tolerance       1e-8;
+        relTol          1e-3;
     }
 
-    // Last outer-corrector solve of the timestep; relTol=0 means solve to
-    // full tolerance since this result is what gets written/used for the next step.
     p_rghFinal
     {
-        solver          GAMG;
-        smoother        GaussSeidel;
-        tolerance       1e-7;
+        $p_rgh;
         relTol          0;
     }
 
-    U
+    "U.*"
     {
         solver          smoothSolver;
         smoother        symGaussSeidel;
-        tolerance       1e-7;
-        relTol          0.1;
-    }
-
-    UFinal
-    {
-        solver          smoothSolver;
-        smoother        symGaussSeidel;
-        tolerance       1e-7;
+        tolerance       1e-8;
         relTol          0;
+        nSweeps         1;
     }
 }
 
 PIMPLE
 {
-    nOuterCorrectors         2;   // outer (SIMPLE-like) iterations per timestep
-    nCorrectors              2;   // PISO pressure-velocity corrector loops per outer iteration
-    nNonOrthogonalCorrectors 0;   // mesh here is orthogonal (blockMesh box), so 0 is sufficient
-    momentumPredictor        yes;
-    pRefCell                 1000;   // reference cell for fixing p_rgh level (no fixed-p boundary)
+    momentumPredictor        no;
+    nOuterCorrectors         3;
+    nCorrectors              2;
+    nNonOrthogonalCorrectors 0;
+
+    // Only used if p_rgh has no fixed-value boundary anywhere (with the
+    // totalPressure outlet on "top" it is not needed, but harmless).
+    pRefCell                 0;
     pRefValue                0;
 }
 
-// Under-relaxation stabilizes the outer-corrector loop; p_rgh and U are
-// relaxed, everything else (alpha, etc., matched by ".*") is left unrelaxed (1).
+// No relaxation in a transient VOF run
 relaxationFactors
 {
-    fields
-    {
-        p_rgh           0.3;
-    }
     equations
     {
-        U               0.7;
         ".*"            1;
     }
 }

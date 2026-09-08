@@ -1,0 +1,106 @@
+/*---------------------------------------------------------------------------*\
+  fvSolution  (FIXED VERSION)
+
+  Changes
+  ───────
+  1. Relaxation removed. This is a transient PIMPLE run with 3 outer
+     correctors; relaxing p_rgh by 0.3 and U by 0.7 damps the physical
+     transient (stock interFoam/interIsoFoam use no relaxation at all).
+  2. nAlphaSubCycles set to 1 - the fixed alphaEqn.H no longer sub-cycles
+     isoAdvector. nAlphaCorr/cAlpha are MULES parameters and are ignored by
+     isoAdvector; kept only because alphaControls.H reads them.
+  3. Tighter p_rgh relTol during the outer iterations (1e-3 instead of 1e-2),
+     and 3 outer correctors: with surface tension in phiHbyA the pressure
+     equation has to converge properly or the capillary/pressure balance is
+     never reached.
+  4. momentumPredictor no - standard choice for surface-tension-dominated VOF;
+     switch back to yes if you see the predictor helping.
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+
+solvers
+{
+    "alpha.*"
+    {
+        nAlphaCorr          1;
+        nAlphaSubCycles     1;
+        cAlpha              1;
+
+        // isoAdvector controls
+        reconstructionScheme isoAlpha;
+        isoFaceTol          1e-8;
+        surfCellTol         1e-8;
+        nAlphaBounds        3;
+        snapTol             1e-12;
+        clip                true;
+        writeIsoFaces       false;
+    }
+
+    "pcorr.*"
+    {
+        solver          PCG;
+        preconditioner
+        {
+            preconditioner  GAMG;
+            tolerance       1e-5;
+            relTol          0;
+            smoother        GaussSeidel;
+        }
+        tolerance       1e-5;
+        relTol          0;
+        maxIter         50;
+    }
+
+    p_rgh
+    {
+        solver          GAMG;
+        smoother        GaussSeidel;
+        tolerance       1e-8;
+        relTol          1e-3;
+    }
+
+    p_rghFinal
+    {
+        $p_rgh;
+        relTol          0;
+    }
+
+    "U.*"
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-8;
+        relTol          0;
+        nSweeps         1;
+    }
+}
+
+PIMPLE
+{
+    momentumPredictor        no;
+    nOuterCorrectors         3;
+    nCorrectors              2;
+    nNonOrthogonalCorrectors 0;
+
+    // Only used if p_rgh has no fixed-value boundary anywhere (with the
+    // totalPressure outlet on "top" it is not needed, but harmless).
+    pRefCell                 0;
+    pRefValue                0;
+}
+
+// No relaxation in a transient VOF run
+relaxationFactors
+{
+    equations
+    {
+        ".*"            1;
+    }
+}
+
+// ************************************************************************* //

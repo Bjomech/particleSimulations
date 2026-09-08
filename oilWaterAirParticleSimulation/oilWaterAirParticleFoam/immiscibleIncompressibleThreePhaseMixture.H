@@ -45,6 +45,7 @@ public:
     using incompressibleThreePhaseMixture::rho2;
     using incompressibleThreePhaseMixture::rho3;
     using incompressibleThreePhaseMixture::mu;
+    using incompressibleThreePhaseMixture::nearInterface;
 
     // Forwards to threePhaseInterfaceProperties (disambiguates which base to call).
     tmp<surfaceScalarField> surfaceTensionForce() const

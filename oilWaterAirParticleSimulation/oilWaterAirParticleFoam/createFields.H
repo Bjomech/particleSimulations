@@ -1,5 +1,7 @@
 // createFields.H — oilWaterAirParticleFoam
-// Three-phase immiscible mixture + two isoAdvection objects + particle cloud fields
+// Three-phase immiscible mixture + particle cloud fields. Phase advection
+// itself (MULES-based, see alphaEqn.H) needs no extra objects constructed
+// here beyond the mixture and the flux-required flags below.
 
 #include "createRDeltaT.H"
 
@@ -125,13 +127,15 @@ if (p_rgh.needReference())
 
 mesh.setFluxRequired(p_rgh.name());
 mesh.setFluxRequired(alpha1.name());
+mesh.setFluxRequired(alpha2.name());
+mesh.setFluxRequired(alpha3.name());
 
 #include "createMRF.H"
 #include "createFvOptions.H"
 
-// Two isoAdvection objects — one per transported phase.
-// isoAdvector reads the phase fraction field and phi; it reconstructs
-// the interface geometrically and computes face fluxes exactly.
-Info<< "Creating isoAdvection objects\n" << endl;
-isoAdvection advector1(alpha1, phi, U);   // for alpha.air
-isoAdvection advector2(alpha2, phi, U);   // for alpha.oil
+// NOTE: this solver used to construct two isoAdvection objects here
+// (advector1/advector2, one per transported phase, geometric PLIC
+// advection). They have been removed: alphaEqn.H now uses a MULES-based
+// joint-limiter scheme for ALL THREE phases instead (see alphaEqn.H's
+// header comment for why). No isoAdvection/geometricVoF objects, headers,
+// or libraries are needed any more - see Make/options.

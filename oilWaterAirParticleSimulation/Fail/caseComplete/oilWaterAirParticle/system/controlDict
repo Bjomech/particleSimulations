@@ -1,0 +1,104 @@
+/*---------------------------------------------------------------------------*\
+  controlDict — SMALL case (oilWaterAirParticle: 5.6 x 7 mm, 400 x 500 cells,
+  dx = dy = 14 um, air bubble d_b = 0.7 mm)
+
+  This replaces the _large-case controlDict I sent before. The differences are
+  all time-step related, because dt_sigma scales with dx^(3/2).
+
+  1) Capillary (Brackbill) limit
+       dt_sigma = sqrt( (rho_water + rho_air) * dx^3 / (4*pi*sigma) )
+                = sqrt( 1001.2 * (14e-6)^3 / (4*pi*0.07) ) = 1.77e-6 s
+     The delivered run used ~1.1e-5 s, i.e. 6x too large: unresolved capillary
+     waves, which together with the unbalanced CSF force is why the bubble
+     stopped rising after ~20 ms. maxDeltaT is therefore set to 1.5e-6 s.
+
+  2) endTime: 0.08 s, NOT 0.6 s.
+     A 0.7 mm air bubble reaches terminal velocity within ~2 diameters. Expected
+     terminal rise velocity: ~0.13 m/s if the interface is fully mobile (clean
+     water — which is what a VOF simulation without surfactant models actually
+     represents), ~0.08 m/s for a rigid/immobile interface. Either way the
+     bubble crosses the remaining 5.5 mm of the domain in 0.04-0.07 s. Running
+     0.6 s was ~10x longer than the physics needs and cost ~4 h of the 14640 s
+     wall time on nothing.
+     Cost estimate: 0.08 s / 1.5e-6 s = ~53k steps; at the ~0.27 s/step your
+     last run averaged (5 MPI ranks) that is ~4 h. Feasible.
+
+  3) writeInterval 0.002 s -> 40 outputs instead of 150. Format stays ascii so
+     that Allrun's subnormal sanitizer and bubbleRise.py can read the fields;
+     with only 40 writes the I/O cost is no longer significant. (Switch to
+     binary only if you also disable the sanitizer in Allrun - a byte-level
+     regex over binary field data would corrupt it.)
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      controlDict;
+}
+
+application     oilWaterAirParticleFoam;
+
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         0.08;
+
+deltaT          1e-6;
+
+writeControl    adjustableRunTime;
+writeInterval   0.002;
+purgeWrite      0;
+
+writeFormat     ascii;
+writePrecision  6;
+writeCompression off;
+
+timeFormat      general;
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  yes;
+maxCo           0.4;
+maxAlphaCo      0.2;
+maxDeltaT       1.5e-6;      // capillary limit at dx = 14 um
+
+functions
+{
+    magU
+    {
+        type            mag;
+        libs            (fieldFunctionObjects);
+        field           U;
+        result          magU;
+        writeControl    writeTime;
+    }
+
+    fieldMinMax
+    {
+        type            fieldMinMax;
+        libs            (fieldFunctionObjects);
+        writeControl    timeStep;
+        writeInterval   200;
+        fields          (U alpha.air alpha.oil alpha.water p_rgh);
+    }
+
+    // Bubble volume + centroid: differentiate y_c(t) to get the rise velocity
+    // and compare with the 0.08-0.13 m/s range above. This is the validation
+    // figure for the thesis.
+    airVolume
+    {
+        type            volFieldValue;
+        libs            (fieldFunctionObjects);
+        writeControl    timeStep;
+        writeInterval   100;
+        writeFields     no;
+        regionType      all;
+        operation       volIntegrate;
+        fields          (alpha.air alpha.oil);
+    }
+}
+
+// ************************************************************************* //

@@ -127,6 +127,29 @@ tmp<volScalarField> incompressibleThreePhaseMixture::mu() const
     );
 }
 
+// Indicator field: 1 in cells that contain an interface of ANY of the three
+// phases, 0 in bulk cells. Three-phase generalisation of stock
+// incompressibleTwoPhaseMixture::nearInterface(), which is required by
+// $FOAM_SOLVERS/multiphase/VoF/alphaCourantNo.H to restrict the interface
+// Courant number to interface cells only.
+tmp<volScalarField> incompressibleThreePhaseMixture::nearInterface() const
+{
+    return volScalarField::New
+    (
+        "nearInterface",
+        max
+        (
+            max
+            (
+                pos0(alpha1_ - 0.01)*pos0(0.99 - alpha1_),
+                pos0(alpha2_ - 0.01)*pos0(0.99 - alpha2_)
+            ),
+            pos0(alpha3_ - 0.01)*pos0(0.99 - alpha3_)
+        )
+    );
+}
+
+
 void incompressibleThreePhaseMixture::correct()
 {
     // No additional correction needed for now

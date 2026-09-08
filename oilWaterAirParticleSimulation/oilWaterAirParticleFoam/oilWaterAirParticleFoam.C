@@ -1,36 +1,64 @@
 /*---------------------------------------------------------------------------*\
-  oilWaterAirParticleFoam
-  Three-phase isoAdvector VOF + Lagrangian kinematic particle cloud.
+  oilWaterAirParticleFoam  (FIXED VERSION)
+  Three-phase MULES/interface-compression VOF + Lagrangian kinematic
+  particle cloud. (Earlier revision used two independent isoAdvector
+  instances; replaced because it advected air and oil geometrically but
+  independently, so overlapping reconstructed interfaces at bubble/droplet
+  contact caused an -8.76 %/-7.99 % volume drift. See alphaEqn.H's header
+  comment for the full rationale and the real OpenFOAM source it is ported
+  from.)
 
   Physics goal
   ────────────
-  Air bubble rises through water carrying a particle upward through oil
-  droplets.  We want to see:
-    • Sharp air|water interface (bubble shape preserved)
-    • Sharp oil|water interfaces (droplets don't dissolve)
-    • Particle captured inside bubble, rising with it
-    • Bubble-oil and oil-particle surface interactions
+  Air bubble rises through water, entrains solid particles and carries them
+  upward through a field of oil droplets.
 
-  Key structural decisions
+  Structure (unchanged)
+  ─────────────────────
+  alphaEqn.H  : once per time step, BEFORE pimple.loop()
+  particles.evolve() : once per time step, AFTER pimple.loop()
+
+  What changed in this file
   ────────────────────────
-  alphaEqn.H is included ONCE per timestep, BEFORE the pimple.loop().
-  isoAdvector runs exactly once per dt — not once per outer corrector.
-
-  rhoPhi is built inside alphaEqn.H and must NOT be overwritten after
-  the include — it discards the geometrically-correct isoAdvector flux.
-
-  particles.evolve() is called ONCE per timestep, AFTER pimple.loop().
-
-  muc uses a full three-phase viscosity blend:
-    alpha1 (air)   muAir  = 1.81e-5 Pa.s  low drag  → particle entrained
-    alpha2 (oil)   muOil  = 50e-3   Pa.s  high drag → particle captured
-    alpha3 (water) mixture.mu()            reference phase
+  1. Interface (alpha) Courant number is now limited via the stock
+     alphaCourantNo.H, so deltaT respects maxAlphaCo from system/controlDict.
+     Previously alphaCoNum was hard-wired to 0 and maxAlphaCo to GREAT, i.e.
+     the interface-advection stability limit was never enforced.
+  2. muc (the viscosity the cloud sees) is now simply the mixture viscosity.
+     The old blend
+         muc = alpha1*1.81e-5 + alpha2*50e-3 + alpha3*mixture.mu()
+     was wrong twice: it hard-coded viscosities that disagree with
+     constant/transportProperties (mu2 = 0.0425 there, 0.05 here), and the
+     third term is quadratic in alpha3 because mixture.mu() already contains
+     alpha1*mu1 + alpha2*mu2 + alpha3*mu3. mixture.mu() is exactly the
+     intended three-phase blend.
+  3. Two-way coupling: ENABLED. UEqn.H now has "+ particles.SU(U)" in the
+     momentum equation, and constant/kinematicCloudProperties has
+     "coupled yes". SU(U) is KinematicCloud's own implicit source term - the
+     Newton's-third-law reaction of the drag/pressure-gradient/virtual-mass
+     force the fluid applied to the parcels during the PRECEDING
+     particles.evolve() call (standard lagged coupling, as in stock
+     kinematicParcelFoam). See kinematicCloudProperties' header comment for
+     why this has negligible visible effect at this particle count/size (St
+     ~ 5e-3, three 14 um parcels) despite being numerically active and
+     physically correct - it is orthogonal to, and does not replace, a
+     dedicated interface-attachment ParticleForce if you want visible
+     trapping.
+  4. Interface-attachment force: IMPLEMENTED. A new custom ParticleForce,
+     InterfaceAttachmentForce (InterfaceAttachmentForce.H/.C, registered via
+     makeOilWaterAirParticleForces.C, selected as "interfaceAttachment" in
+     kinematicCloudProperties), gives particles the sub-grid capillary
+     pinning behaviour that plain drag/gravity/pressureGradient/virtualMass
+     cannot provide at St ~ 5e-3. This supersedes the note in (3)/README
+     that such a force "needs to be added" - it now exists. See
+     InterfaceAttachmentForce.H's header comment for the model, its units,
+     and citations.
 \*---------------------------------------------------------------------------*/
 
 #include "fvCFD.H"
-#include "turbulentTransportModel.H"
 #include "dynamicFvMesh.H"
-#include "isoAdvection.H"
+#include "MULES.H"
+#include "upwind.H"       // upwind<scalar>(mesh, phi).flux(alpha) in alphaEqn.H
 #include "EulerDdtScheme.H"
 #include "localEulerDdtScheme.H"
 #include "CrankNicolsonDdtScheme.H"
@@ -48,9 +76,9 @@ int main(int argc, char *argv[])
 {
     argList::addNote
     (
-        "oilWaterAirParticleFoam: three-phase isoAdvector VOF solver "
+        "oilWaterAirParticleFoam: three-phase MULES VOF solver "
         "(air bubble rising through oil droplets in water) "
-        "with Lagrangian kinematic particle cloud."
+        "with a Lagrangian kinematic particle cloud."
     );
 
     #include "postProcess.H"
@@ -63,10 +91,6 @@ int main(int argc, char *argv[])
     #include "createFields.H"
     #include "initCorrectPhi.H"
     #include "createUfIfPresent.H"
-
-    // alpha3 (water) is declared in createFields.H as:
-    //   volScalarField& alpha3 = mixture.alpha3();
-    // No redeclaration needed here.
 
     const word kinematicCloudName
     (
@@ -89,19 +113,20 @@ int main(int argc, char *argv[])
         else
         {
             #include "CourantNo.H"
-            scalar alphaCoNum = 0.0;
-            scalar maxAlphaCo = GREAT;
+            #include "alphaCourantNo.H"   // needs maxAlphaCo in controlDict
             #include "setDeltaT.H"
         }
 
         ++runTime;
         Info<< "Time = " << runTime.timeName() << nl << endl;
 
-        // ── Alpha advection ── ONCE per timestep, before PIMPLE loop ─────
-        #include "alphaControls.H"
+        // ── Alpha advection: once per time step, before the PIMPLE loop ────
+        // MULES-based, jointly bounded across all three phases - reads
+        // cAlpha (and optional MULES::control tuning keys) directly from
+        // fvSolution's "alpha.*" subdict inside alphaEqn.H itself.
         #include "alphaEqn.H"
 
-        // Update density — do NOT overwrite rhoPhi (set in alphaEqn.H).
+        // Update density - do NOT overwrite rhoPhi (set in alphaEqn.H)
         rho = alpha1*rho1 + alpha2*rho2 + alpha3*rho3;
 
         // ── PIMPLE loop ───────────────────────────────────────────────────
@@ -126,6 +151,7 @@ int main(int argc, char *argv[])
                 }
             }
 
+            // Recompute the interface curvatures K.air/K.oil/K.water
             mixture.correct();
 
             if (checkMeshCourantNo)
@@ -133,7 +159,10 @@ int main(int argc, char *argv[])
                 #include "meshCourantNo.H"
             }
 
-            if (pimple.frozenFlow()) continue;
+            if (pimple.frozenFlow())
+            {
+                continue;
+            }
 
             #include "UEqn.H"
 
@@ -141,25 +170,16 @@ int main(int argc, char *argv[])
             {
                 #include "pEqn.H"
             }
-
-            // turbulence->correct() omitted: there is no turbulence model
-            // object to correct in this solver at all (see createFields.H
-            // — the turbulence model construction is commented out; UEqn.H
-            // uses mixture.mu() directly, i.e. always laminar). This is not
-            // caused by basicKinematicCloud, which has no bearing on
-            // turbulence modelling. Add a turbulence model object back in
-            // createFields.H (and call ->correct() here) if RAS/LES is needed.
         }
 
-        // ── Particle cloud ── ONCE per timestep, after flow solve ─────────
-        // Three-phase viscosity blend — alpha3 is mixture.alpha3() (water).
-        muc = alpha1 * dimensionedScalar("muAir",  dimDynamicViscosity, 1.81e-5)
-            + alpha2 * dimensionedScalar("muOil",  dimDynamicViscosity, 50e-3)
-            + alpha3 * mixture.mu();
+        // ── Particle cloud: once per time step, after the flow solve ───────
+        // muc = three-phase mixture viscosity (air inside the bubble, oil in
+        // the droplets, water elsewhere), floored to avoid a zero denominator
+        // in the drag correlation.
         muc = max
         (
-            muc,
-            dimensionedScalar("mucMin", dimDynamicViscosity, 1e-5)
+            mixture.mu(),
+            dimensionedScalar("mucMin", dimDynamicViscosity, 1e-6)
         );
 
         particles.evolve();
@@ -169,6 +189,7 @@ int main(int argc, char *argv[])
     }
 
     Info<< "End\n" << endl;
+
     return 0;
 }
 

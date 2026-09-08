@@ -69,6 +69,13 @@ public:
     // no turbulence model is constructed in this solver (see createFields.H).
     tmp<volScalarField> mu() const;
 
+    // Indicator field (1 = cell contains an interface of any phase, 0 = bulk).
+    // Required by $FOAM_SOLVERS/multiphase/VoF/alphaCourantNo.H, which calls
+    // mixture.nearInterface() to limit the interface Courant number to
+    // interface cells. Three-phase generalisation of stock
+    // incompressibleTwoPhaseMixture::nearInterface().
+    tmp<volScalarField> nearInterface() const;
+
     // Currently a no-op placeholder (densities/viscosities are constant in
     // this incompressible mixture) but kept so the class satisfies the same
     // "correct()" interface other mixture classes (e.g. two-phase interFoam's)

@@ -1,0 +1,98 @@
+FoamFile { version 2.0; format ascii; class dictionary; object setFieldsDict; }
+defaultFieldValues
+(
+    volScalarFieldValue alpha.air   0
+    volScalarFieldValue alpha.oil   0
+    volScalarFieldValue alpha.water 1
+);
+
+regions
+(
+    // Air bubble: R=0.35mm (shrunk by factor 0.07 from original R=5mm), centre scaled accordingly.
+    // x-centre = 0.0028 = new domain half-width (Lx=0.0056m), i.e. still exactly centred in x.
+    // Domain was widened from 2.1mm to 5.6mm (8x bubble diameter) to reduce side-wall
+    // confinement — the 2.1mm case let the bubble drift into a wall almost immediately and
+    // stall there for most of the run instead of rising freely; see the wider blockMeshDict.
+    // NOTE: the old "rise velocity ~120mm/s -> reaches droplet 1 at t~0.13s" estimate was a
+    // stale note from the pre-shrink 5mm-radius bubble and does not apply to this geometry.
+    // REVERTED: a 0.15 m/s initial injection velocity was tried here (upward, +y)
+    // but caused a large unphysical shock -- imposing a sharp velocity jump at the
+    // bubble's spherical boundary (0.15 m/s inside, 0 m/s outside) forces the
+    // pressure-velocity solver to violently reconcile a velocity discontinuity in
+    // the very first timesteps, producing an uncontrolled ~0.7mm downward lurch
+    // within the first 4ms of simulated time -- much larger than any real physical
+    // signal. Reverted back to a clean zero initial velocity so only buoyancy acts;
+    // the small (~1mm/s) genuine upward drift seen after the shock decayed in the
+    // injected-velocity run suggests buoyancy alone is enough, it's just slow.
+    sphereToCell
+    {
+        centre  (0.0028 0.00105 0.000035);
+        radius  0.00035;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   1
+            volScalarFieldValue alpha.oil   0
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // DIAGNOSTIC: Oil droplet 1 REMOVED for this run only.
+    // Reason: on the coarse mesh (dx=dy=56um, bubble ~12.5 cells across),
+    // the v3 alpha-smoothing curvature fix produced a bubble that rose
+    // cleanly then drifted sideways into a wall and froze there -- in a
+    // 5-core parallel run it drifted LEFT into the bottom-left corner; in
+    // a serial rerun of the identical case it drifted RIGHT instead and
+    // settled near the bottom-right. The drift direction flipping between
+    // runs (while the instability itself did not go away) pointed to
+    // curvature-calculation noise on the coarse mesh, not a real physical
+    // effect or a droplet/decomposition artifact.
+    // A separate test on the ORIGINAL, pre-shrink full-scale geometry
+    // (bubble R=5mm, ~50 cells across, 30x100mm domain) showed no such
+    // wall-drift-and-freeze at all -- the bubble stayed mobile within the
+    // domain interior the whole run (x oscillated between ~5-27mm in a
+    // 30mm-wide domain, never pinned at a wall).
+    // This case tests the missing link: does doubling resolution on the
+    // SAME shrunk geometry as the coarse case (dx=dy=28um instead of 56um,
+    // ~25 cells across the bubble instead of ~12.5, same 5.6x7mm domain,
+    // same bubble/droplet 2/3 positions) fix the drift, confirming
+    // resolution alone (not the absolute physical scale) is what matters.
+    // To restore the droplet later, uncomment the block below.
+    //
+    // sphereToCell
+    // {
+    //     centre  (0.00287 0.0021 0.000035);
+    //     radius  0.00021;
+    //     fieldValues
+    //     (
+    //         volScalarFieldValue alpha.air   0
+    //         volScalarFieldValue alpha.oil   1
+    //         volScalarFieldValue alpha.water 0
+    //     );
+    // }
+
+    // Oil droplet 2 — scaled by 0.07 (was centre (0.014 0.065 0.0005), radius 0.0025)
+    sphereToCell
+    {
+        centre  (0.00273 0.00455 0.000035);
+        radius  0.000175;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   0
+            volScalarFieldValue alpha.oil   1
+            volScalarFieldValue alpha.water 0
+        );
+    }
+
+    // Oil droplet 3 — scaled by 0.07 (was centre (0.015 0.085 0.0005), radius 0.002)
+    sphereToCell
+    {
+        centre  (0.0028 0.00595 0.000035);
+        radius  0.00014;
+        fieldValues
+        (
+            volScalarFieldValue alpha.air   0
+            volScalarFieldValue alpha.oil   1
+            volScalarFieldValue alpha.water 0
+        );
+    }
+);
