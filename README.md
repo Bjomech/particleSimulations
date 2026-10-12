@@ -36,7 +36,7 @@ which interFoam
 ├── oilWaterAirParticleSimulation/
 │   ├── oilWaterAirParticle*/       # Water/oil/air + particle cases
 │   └── oilWaterAirParticleFoam/    # Three-phase custom solver
-├── oilWaterAirParticleSimulation_coarse/
+├── oilAirWaterParticleSimulation_coarse/
 ├── oilWaterAirParticleSimulation_large/
 ├── collect_diagnostics.sh
 ├── collect_trajectory.sh
@@ -193,6 +193,40 @@ Review each script’s paths and expected input files before execution.
 - Test solver changes incrementally: compile first, then test mesh creation, initialization, serial execution, and only then parallel execution.
 - Archive or remove duplicated historical cases once a reproducible reference case has been identified.
 - Before interpreting results, check Courant numbers, phase-volume conservation, residuals, interface behaviour, cloud statistics, and force/buoyancy directions.
+
+## Code provenance and original contributions
+
+This repository contains modifications of existing OpenFOAM solvers and uses
+existing OpenFOAM libraries. It is not a set of solvers written entirely from
+scratch. Development was done mainly with OpenFOAM v2512; the exact upstream
+version from which each solver was originally copied has not been verified.
+
+| Solver | Upstream basis (OpenFOAM) |
+|---|---|
+| `turbulentThreePhaseFoam` (InterFoamSimulation) | `interFoam` |
+| `interisofoamSolver` (InterIsoFoamSimulation) | `interIsoFoam` |
+| `oilWaterAirParticleFoam` | `interFoam` / `interIsoFoam`, three-phase mixture classes from `interMixingFoam` |
+| `fourPhaseDNSFoam` | `interMixingFoam`; porosity terms follow Jensen et al. (2014), see `UEqnAddPorosity.H` |
+
+Upstream copyright holders and the upstream reference are documented in the
+header of each source file. Changes are documented in the file headers and the
+git history.
+
+Original contributions and modifications by Bjoern Klepsch include:
+- Coupling of a Lagrangian `basicKinematicCloud` to the interFoam-, interIsoFoam-
+  and interMixingFoam-based VOF solvers.
+- A side-by-side setup comparing MULES/interface compression with geometric
+  isoAdvector VOF on identical oil-water-particle cases.
+- A three-phase (air/oil/water) particle solver, including the rewritten
+  conservative alpha advection and the modified momentum/pressure equations.
+- The custom `InterfaceAttachmentForce` particle force model and its
+  run-time registration.
+- Case setups, diagnostic scripts (`collect_diagnostics.sh`,
+  `collect_trajectory.sh`) and the post-processing dashboard
+  (`comparison_dashboard.py`).
+
+Models, algorithms, or code adopted from other sources are identified in the
+relevant source files and in the accompanying thesis.
 
 ## License
 

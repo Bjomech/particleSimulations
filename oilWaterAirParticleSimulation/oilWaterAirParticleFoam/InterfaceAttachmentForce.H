@@ -1,4 +1,28 @@
 /*---------------------------------------------------------------------------*\
+  This file is part of particleSimulations (Bjomech/particleSimulations).
+-------------------------------------------------------------------------------
+Origin
+    New file written for this project. Uses the OpenFOAM lagrangian/intermediate
+    ParticleForce framework and follows the structure of the OpenFOAM
+    PressureGradientForce<CloudType> class (Copyright OpenFOAM Foundation /
+    OpenCFD Ltd.); see the file description for details.
+
+Modifications
+    Copyright (C) 2026 Bjoern Klepsch
+    Last modified: 2026-09-08 (see git history for the detailed change log)
+-------------------------------------------------------------------------------
+License
+    This program is free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version. See the LICENSE file in the repository root.
+
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+\*---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------*\
   InterfaceAttachmentForce  (NEW - custom, non-stock ParticleForce)
 
   Description

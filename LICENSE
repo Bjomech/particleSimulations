@@ -1,6 +1,13 @@
 Custom OpenFOAM solvers and cases (fourPhaseDNSFoam, turbulentThreePhaseFoam,
 interisofoamSolver, oilWaterAirParticleFoam) and their associated cases.
 Copyright (C) 2026  Bjoern Klepsch
+for original contributions and modifications.
+
+Portions of this repository are derived from OpenFOAM. Copyright in that
+upstream material remains with its respective holders (OpenFOAM Foundation,
+OpenCFD Ltd. and other contributors). Original copyright notices are retained
+in the relevant source files; files without a preserved upstream header carry
+a provenance notice naming the upstream solver they are derived from.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
